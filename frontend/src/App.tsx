@@ -8,6 +8,7 @@ import GlobalDownloadNotifier from './components/common/GlobalDownloadNotifier';
 import ToastContainer from './components/common/ToastContainer';
 import PasswordGate from './components/Auth/PasswordGate';
 import { useSettingsStore } from './store/settings';
+import { useAccountsStore } from './store/accounts';
 
 const HomePage = lazy(() => import('./components/Welcome/HomePage'));
 const AccountList = lazy(() => import('./components/Account/AccountList'));
@@ -42,6 +43,45 @@ function Loading() {
   );
 }
 
+function AuthenticatedShell() {
+  const loadAccounts = useAccountsStore((s) => s.loadAccounts);
+
+  useEffect(() => {
+    loadAccounts().catch(() => undefined);
+  }, [loadAccounts]);
+
+  return (
+    <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-50 text-gray-900 selection:bg-blue-200 dark:bg-gray-950 dark:text-gray-100 dark:selection:bg-blue-800">
+      <ToastContainer />
+      <GlobalDownloadNotifier />
+
+      <Sidebar />
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pt-[env(safe-area-inset-top)]">
+        <MobileHeader />
+        <Suspense fallback={<Loading />}>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/accounts" element={<AccountList />} />
+            <Route path="/accounts/add" element={<AddAccountForm />} />
+            <Route path="/accounts/:email" element={<AccountDetail />} />
+            <Route path="/search" element={<SearchPage />} />
+            <Route path="/search/:appId" element={<ProductDetail />} />
+            <Route
+              path="/search/:appId/versions"
+              element={<VersionHistory />}
+            />
+            <Route path="/downloads" element={<DownloadList />} />
+            <Route path="/downloads/add" element={<AddDownload />} />
+            <Route path="/downloads/:id" element={<PackageDetail />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        </Suspense>
+      </main>
+      <MobileNav />
+    </div>
+  );
+}
+
 export default function App() {
   const theme = useSettingsStore((s) => s.theme);
 
@@ -68,34 +108,7 @@ export default function App() {
 
   return (
     <PasswordGate>
-      <div className="flex h-screen h-[100dvh] overflow-hidden bg-gray-50 text-gray-900 selection:bg-blue-200 dark:bg-gray-950 dark:text-gray-100 dark:selection:bg-blue-800">
-        <ToastContainer />
-        <GlobalDownloadNotifier />
-
-        <Sidebar />
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden md:pt-[env(safe-area-inset-top)]">
-          <MobileHeader />
-          <Suspense fallback={<Loading />}>
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/accounts" element={<AccountList />} />
-              <Route path="/accounts/add" element={<AddAccountForm />} />
-              <Route path="/accounts/:email" element={<AccountDetail />} />
-              <Route path="/search" element={<SearchPage />} />
-              <Route path="/search/:appId" element={<ProductDetail />} />
-              <Route
-                path="/search/:appId/versions"
-                element={<VersionHistory />}
-              />
-              <Route path="/downloads" element={<DownloadList />} />
-              <Route path="/downloads/add" element={<AddDownload />} />
-              <Route path="/downloads/:id" element={<PackageDetail />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </Suspense>
-        </main>
-        <MobileNav />
-      </div>
+      <AuthenticatedShell />
     </PasswordGate>
   );
 }

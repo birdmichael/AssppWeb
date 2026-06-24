@@ -1,23 +1,37 @@
 import { create } from "zustand";
-import { openDB, type IDBPDatabase } from "idb";
+import { openDB } from "idb";
+import { apiDelete, apiGet, apiPut } from "../api/client";
 import type { Account } from "../types";
 
 const DB_NAME = "asspp-accounts";
 const STORE_NAME = "accounts";
 
-let dbPromise: Promise<IDBPDatabase> | null = null;
-
-function getDB(): Promise<IDBPDatabase> {
-  if (!dbPromise) {
-    dbPromise = openDB(DB_NAME, 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains(STORE_NAME)) {
-          db.createObjectStore(STORE_NAME, { keyPath: "email" });
-        }
-      },
-    });
+async function readLegacyAccounts(): Promise<Account[]> {
+  const db = await openDB(DB_NAME, 1, {
+    upgrade(db) {
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: "email" });
+      }
+    },
+  });
+  try {
+    return (await db.getAll(STORE_NAME)) as Account[];
+  } finally {
+    db.close();
   }
-  return dbPromise;
+}
+
+function deleteLegacyDatabase(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
+  });
+}
+
+function accountPath(email: string): string {
+  return `/api/accounts/${encodeURIComponent(email)}`;
 }
 
 interface AccountsState {
@@ -27,6 +41,7 @@ interface AccountsState {
   addAccount: (account: Account) => Promise<void>;
   removeAccount: (email: string) => Promise<void>;
   updateAccount: (account: Account) => Promise<void>;
+  clearAccounts: () => Promise<void>;
 }
 
 export const useAccountsStore = create<AccountsState>((set, get) => ({
@@ -35,38 +50,60 @@ export const useAccountsStore = create<AccountsState>((set, get) => ({
 
   loadAccounts: async () => {
     set({ loading: true });
-    const db = await getDB();
-    const accounts = await db.getAll(STORE_NAME);
-    set({ accounts, loading: false });
+    try {
+      const serverAccounts = await apiGet<Account[]>("/api/accounts");
+      if (serverAccounts.length > 0) {
+        set({ accounts: serverAccounts, loading: false });
+        return;
+      }
+
+      const legacyAccounts = await readLegacyAccounts();
+      if (legacyAccounts.length === 0) {
+        set({ accounts: [], loading: false });
+        return;
+      }
+
+      const migrated: Account[] = [];
+      for (const account of legacyAccounts) {
+        migrated.push(await apiPut<Account>(accountPath(account.email), account));
+      }
+      await deleteLegacyDatabase();
+      set({ accounts: migrated, loading: false });
+    } catch (error) {
+      set({ loading: false });
+      throw error;
+    }
   },
 
   addAccount: async (account: Account) => {
-    const db = await getDB();
-    await db.put(STORE_NAME, account);
+    const saved = await apiPut<Account>(accountPath(account.email), account);
     set({
       accounts: [
-        ...get().accounts.filter((a) => a.email !== account.email),
-        account,
+        ...get().accounts.filter((a) => a.email !== saved.email),
+        saved,
       ],
     });
   },
 
   removeAccount: async (email: string) => {
-    const db = await getDB();
-    await db.delete(STORE_NAME, email);
+    await apiDelete(accountPath(email));
     set({ accounts: get().accounts.filter((a) => a.email !== email) });
   },
 
   updateAccount: async (account: Account) => {
-    const db = await getDB();
-    await db.put(STORE_NAME, account);
+    const saved = await apiPut<Account>(accountPath(account.email), account);
+    const exists = get().accounts.some((a) => a.email === saved.email);
     set({
-      accounts: get().accounts.map((a) =>
-        a.email === account.email ? account : a,
-      ),
+      accounts: exists
+        ? get().accounts.map((a) => (a.email === saved.email ? saved : a))
+        : [...get().accounts, saved],
     });
   },
-}));
 
-// Auto-load accounts on import
-useAccountsStore.getState().loadAccounts();
+  clearAccounts: async () => {
+    for (const account of get().accounts) {
+      await apiDelete(accountPath(account.email));
+    }
+    set({ accounts: [] });
+  },
+}));

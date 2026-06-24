@@ -1,6 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAccountsStore } from "../../src/store/accounts";
 import type { Account } from "../../src/types";
+
+const DB_NAME = "asspp-accounts";
+const STORE_NAME = "accounts";
 
 const mockAccount: Account = {
   email: "test@example.com",
@@ -12,81 +15,148 @@ const mockAccount: Account = {
   passwordToken: "token123",
   directoryServicesIdentifier: "dsid123",
   cookies: [],
+  deviceIdentifier: "abcdef123456",
 };
 
-describe("store/accounts", () => {
-  beforeEach(async () => {
-    // Clear the store
-    const state = useAccountsStore.getState();
-    for (const account of state.accounts) {
-      await state.removeAccount(account.email);
-    }
-    await state.loadAccounts();
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
   });
+}
 
-  it("should start with empty accounts", async () => {
-    await useAccountsStore.getState().loadAccounts();
-    expect(useAccountsStore.getState().accounts).toHaveLength(0);
+function deleteDb(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();
   });
+}
 
-  it("should add an account", async () => {
-    await useAccountsStore.getState().addAccount(mockAccount);
-    const accounts = useAccountsStore.getState().accounts;
-    expect(accounts).toHaveLength(1);
-    expect(accounts[0].email).toBe("test@example.com");
-    expect(accounts[0].firstName).toBe("Test");
-  });
-
-  it("should persist account to IndexedDB and reload", async () => {
-    await useAccountsStore.getState().addAccount(mockAccount);
-    await useAccountsStore.getState().loadAccounts();
-    const accounts = useAccountsStore.getState().accounts;
-    expect(accounts.find((a) => a.email === "test@example.com")).toBeDefined();
-  });
-
-  it("should remove an account", async () => {
-    await useAccountsStore.getState().addAccount(mockAccount);
-    expect(useAccountsStore.getState().accounts).toHaveLength(1);
-
-    await useAccountsStore.getState().removeAccount("test@example.com");
-    expect(useAccountsStore.getState().accounts).toHaveLength(0);
-  });
-
-  it("should update an account", async () => {
-    await useAccountsStore.getState().addAccount(mockAccount);
-
-    const updated = {
-      ...mockAccount,
-      firstName: "Updated",
-      passwordToken: "newtoken",
+async function seedLegacyAccounts(accounts: Account[]): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE_NAME, { keyPath: "email" });
     };
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const db = req.result;
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      for (const account of accounts) {
+        tx.objectStore(STORE_NAME).put(account);
+      }
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    };
+  });
+}
+
+describe("store/accounts", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    await deleteDb(DB_NAME);
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    useAccountsStore.setState({ accounts: [], loading: false });
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await deleteDb(DB_NAME);
+  });
+
+  it("loads accounts from the server", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([mockAccount]));
+
+    await useAccountsStore.getState().loadAccounts();
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/accounts", { headers: {} });
+    expect(useAccountsStore.getState().accounts).toEqual([mockAccount]);
+  });
+
+  it("adds an account through the server API", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(mockAccount));
+
+    await useAccountsStore.getState().addAccount(mockAccount);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/accounts/${encodeURIComponent(mockAccount.email)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mockAccount),
+      },
+    );
+    expect(useAccountsStore.getState().accounts).toEqual([mockAccount]);
+  });
+
+  it("updates an account through the server API", async () => {
+    const updated = { ...mockAccount, firstName: "Updated" };
+    useAccountsStore.setState({ accounts: [mockAccount], loading: false });
+    fetchMock.mockResolvedValueOnce(jsonResponse(updated));
+
     await useAccountsStore.getState().updateAccount(updated);
 
-    const accounts = useAccountsStore.getState().accounts;
-    expect(accounts[0].firstName).toBe("Updated");
-    expect(accounts[0].passwordToken).toBe("newtoken");
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/accounts/${encodeURIComponent(updated.email)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      },
+    );
+    expect(useAccountsStore.getState().accounts).toEqual([updated]);
   });
 
-  it("should handle multiple accounts", async () => {
-    await useAccountsStore.getState().addAccount(mockAccount);
-    await useAccountsStore.getState().addAccount({
-      ...mockAccount,
-      email: "other@example.com",
-      firstName: "Other",
-    });
+  it("removes an account through the server API", async () => {
+    useAccountsStore.setState({ accounts: [mockAccount], loading: false });
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
-    expect(useAccountsStore.getState().accounts).toHaveLength(2);
+    await useAccountsStore.getState().removeAccount(mockAccount.email);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/accounts/${encodeURIComponent(mockAccount.email)}`,
+      { method: "DELETE", headers: {} },
+    );
+    expect(useAccountsStore.getState().accounts).toEqual([]);
   });
 
-  it("should replace account with same email on add", async () => {
-    await useAccountsStore.getState().addAccount(mockAccount);
-    await useAccountsStore.getState().addAccount({
-      ...mockAccount,
-      firstName: "Replaced",
-    });
+  it("migrates legacy IndexedDB accounts when the server is empty", async () => {
+    await seedLegacyAccounts([mockAccount]);
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse(mockAccount));
 
-    const accounts = useAccountsStore.getState().accounts;
-    expect(accounts).toHaveLength(1);
-    expect(accounts[0].firstName).toBe("Replaced");
+    await useAccountsStore.getState().loadAccounts();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      `/api/accounts/${encodeURIComponent(mockAccount.email)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mockAccount),
+      },
+    );
+    expect(useAccountsStore.getState().accounts).toEqual([mockAccount]);
+  });
+
+  it("does not migrate legacy IndexedDB accounts when server accounts exist", async () => {
+    await seedLegacyAccounts([{ ...mockAccount, email: "legacy@example.com" }]);
+    fetchMock.mockResolvedValueOnce(jsonResponse([mockAccount]));
+
+    await useAccountsStore.getState().loadAccounts();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(useAccountsStore.getState().accounts).toEqual([mockAccount]);
   });
 });

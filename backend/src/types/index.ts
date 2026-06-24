@@ -24,6 +24,35 @@ export interface Sinf {
   sinf: string; // base64 encoded
 }
 
+export interface Cookie {
+  name: string;
+  value: string;
+  path: string;
+  domain?: string;
+  hostOnly?: boolean;
+  expiresAt?: number;
+  httpOnly: boolean;
+  secure: boolean;
+}
+
+export interface Account {
+  email: string;
+  password: string;
+  appleId: string;
+  store: string;
+  /** Full X-Set-Apple-Store-Front value, distinct from the region ID. */
+  storeFront?: string;
+  firstName: string;
+  lastName: string;
+  passwordToken: string;
+  directoryServicesIdentifier: string;
+  cookies: Cookie[];
+  deviceIdentifier: string;
+  pod?: string;
+  /** Last successful validated authentication URL; query GUID is not persisted. */
+  authEndpoint?: string;
+}
+
 export interface DownloadTask {
   id: string;
   software: Software;
