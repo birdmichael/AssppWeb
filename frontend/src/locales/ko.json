@@ -238,8 +238,8 @@
     },
     "data": {
       "title": "데이터",
-      "description": "이 브라우저에 저장된 모든 로컬 계정, 자격 증명 및 설정을 지웁니다.",
-      "confirm": "모든 계정과 설정이 삭제되며 복구할 수 없습니다. 계속하시겠습니까?",
+      "description": "이 인스턴스의 서버 저장 계정과 로컬 설정을 지웁니다.",
+      "confirm": "서버에 저장된 계정, 자격 증명 및 로컬 설정이 삭제되며 복구할 수 없습니다. 계속하시겠습니까?",
       "button": "모든 데이터 초기화",
       "exportBtn": "계정 내보내기",
       "importBtn": "계정 가져오기",
@@ -253,9 +253,9 @@
       "confirmBtn": "확인",
       "conflictTitle": "중복 계정 발견",
       "conflictDesc": "백업에서 {{conflict}}개의 동일한 계정과 {{new}}개의 새 계정을 발견했습니다.",
-      "conflictOverwrite": "로컬 덮어쓰기",
-      "conflictSkip": "로컬 유지 (새 계정만 추가)",
-      "cleared": "모든 로컬 데이터가 삭제되었습니다"
+      "conflictOverwrite": "서버 덮어쓰기",
+      "conflictSkip": "서버 유지 (새 계정만 추가)",
+      "cleared": "서버 계정과 로컬 설정이 삭제되었습니다"
     },
     "about": {
       "title": "정보",

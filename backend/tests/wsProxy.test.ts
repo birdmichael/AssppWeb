@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
+import crypto from "crypto";
 import { createServer, Server } from "http";
 import net from "net";
 import { WebSocket } from "ws";
@@ -7,6 +8,7 @@ import { setupWsProxy } from "../src/services/wsProxy.js";
 
 let httpServer: Server | null = null;
 let serverPort: number;
+const accessToken = crypto.createHash("sha256").update("123456").digest("hex");
 
 async function startServer() {
   const app = express();
@@ -35,10 +37,12 @@ describe("Wisp Proxy", () => {
     await stopServer();
   });
 
-  it("should accept WebSocket connections on /wisp/ path", async () => {
+  it("should accept WebSocket connections on /wisp/ path with a valid token", async () => {
     await startServer();
 
-    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/wisp/`);
+    const ws = new WebSocket(
+      `ws://127.0.0.1:${serverPort}/wisp/?token=${accessToken}`,
+    );
 
     const opened = await new Promise<boolean>((resolve) => {
       ws.on("open", () => resolve(true));
@@ -48,6 +52,23 @@ describe("Wisp Proxy", () => {
 
     expect(opened).toBe(true);
     ws.close();
+  });
+
+  it("should reject WebSocket connections on /wisp/ path without a token", async () => {
+    await startServer();
+
+    const ws = new WebSocket(`ws://127.0.0.1:${serverPort}/wisp/`);
+
+    const rejected = await new Promise<boolean>((resolve) => {
+      ws.on("error", () => resolve(true));
+      ws.on("close", () => resolve(true));
+      ws.on("open", () => {
+        ws.close();
+        resolve(false);
+      });
+    });
+
+    expect(rejected).toBe(true);
   });
 
   it("should reject connections on non-wisp paths", async () => {

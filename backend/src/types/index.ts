@@ -24,6 +24,30 @@ export interface Sinf {
   sinf: string; // base64 encoded
 }
 
+export interface Cookie {
+  name: string;
+  value: string;
+  path: string;
+  domain?: string;
+  expiresAt?: number;
+  httpOnly: boolean;
+  secure: boolean;
+}
+
+export interface Account {
+  email: string;
+  password: string;
+  appleId: string;
+  store: string;
+  firstName: string;
+  lastName: string;
+  passwordToken: string;
+  directoryServicesIdentifier: string;
+  cookies: Cookie[];
+  deviceIdentifier: string;
+  pod?: string;
+}
+
 export interface DownloadTask {
   id: string;
   software: Software;

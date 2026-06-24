@@ -238,8 +238,8 @@
     },
     "data": {
       "title": "数据",
-      "description": "清除此浏览器中存储的所有本地数据，包括账号、凭据和设置。",
-      "confirm": "这将删除所有账号、凭据和设置，且无法恢复。是否继续？",
+      "description": "清除此实例中的服务端账号和本地设置。",
+      "confirm": "这将删除服务端保存的账号、凭据和本地设置，且无法恢复。是否继续？",
       "button": "重置所有数据",
       "exportBtn": "导出账号",
       "importBtn": "导入账号",
@@ -253,9 +253,9 @@
       "confirmBtn": "确认",
       "conflictTitle": "发现重复账号",
       "conflictDesc": "在备份中发现 {{conflict}} 个相同的账号以及 {{new}} 个新账号。",
-      "conflictOverwrite": "覆盖本地",
-      "conflictSkip": "保留本地 (仅添加新账号)",
-      "cleared": "所有本地数据已清空"
+      "conflictOverwrite": "覆盖服务端",
+      "conflictSkip": "保留服务端 (仅添加新账号)",
+      "cleared": "服务端账号和本地设置已清空"
     },
     "about": {
       "title": "关于",

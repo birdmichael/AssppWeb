@@ -30,7 +30,8 @@ const entityTypes = [
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();
-  const { accounts, addAccount, updateAccount } = useAccountsStore();
+  const { accounts, addAccount, updateAccount, clearAccounts } =
+    useAccountsStore();
   const addToast = useToastStore((s) => s.addToast);
 
   const [country, setCountry] = useState(
@@ -170,6 +171,22 @@ export default function SettingsPage() {
     setConflictModalOpen(false);
     setPendingAccounts([]);
     addToast(t("settings.data.importSuccess"), "success");
+  };
+
+  const handleClearData = async () => {
+    if (!confirm(t("settings.data.confirm"))) return;
+    try {
+      await clearAccounts();
+      localStorage.clear();
+      sessionStorage.clear();
+      indexedDB.deleteDatabase("asspp-accounts");
+      addToast(t("settings.data.cleared"), "success");
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1000);
+    } catch {
+      addToast(t("settings.data.incorrectPassword"), "error");
+    }
   };
 
   return (
@@ -400,15 +417,7 @@ export default function SettingsPage() {
           </div>
 
           <button
-            onClick={() => {
-              if (!confirm(t("settings.data.confirm"))) return;
-              localStorage.clear();
-              indexedDB.deleteDatabase("asspp-accounts");
-              addToast(t("settings.data.cleared"), "success");
-              setTimeout(() => {
-                window.location.href = "/";
-              }, 1000);
-            }}
+            onClick={handleClearData}
             className="px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 border border-red-300 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
           >
             {t("settings.data.button")}

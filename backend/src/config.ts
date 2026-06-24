@@ -15,8 +15,8 @@ export const config = {
   // Build info (injected via Docker build args)
   buildCommit: process.env.BUILD_COMMIT || "unknown",
   buildDate: process.env.BUILD_DATE || "unknown",
-  // Access password protection (empty = disabled)
-  accessPassword: process.env.ACCESS_PASSWORD || "",
+  // Access password protection is always enabled; change this in production.
+  accessPassword: process.env.ACCESS_PASSWORD || "123456",
 };
 
 export const accessPasswordHash = config.accessPassword

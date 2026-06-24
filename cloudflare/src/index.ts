@@ -10,6 +10,7 @@ export class AssppContainer extends Container {
     DATA_DIR: "/data",
     NODE_ENV: "production",
     PORT: "8080",
+    ACCESS_PASSWORD: "123456",
   };
 }
 

@@ -15,13 +15,13 @@
 - `references/ApplePackage/` — Swift reference implementation (source of truth)
 - Multi-stage Docker build (single container serves both)
 
-## Architecture — Zero-Trust
+## Architecture — Server-Saved Accounts
 
-The server is a blind TCP proxy. It NEVER sees Apple credentials.
+This fork saves Apple account records on the server so users can share accounts across devices. The server stores encrypted account data in `DATA_DIR/accounts.enc.json`, using `ACCESS_PASSWORD` as the key material. Apple protocol traffic still runs from the browser through Wisp, but the server now receives and stores account credentials, password tokens, and cookies through `/api/accounts`.
 
 ```
 ┌─ Browser (Client) ─────────────────────────────────┐
-│  Credentials (IndexedDB): email, password, cookies, │
+│  Credentials (server account store): email, password, cookies, │
 │    passwordToken, DSID, deviceIdentifier, pod       │
 │                                                      │
 │  Apple Protocol (libcurl.js WASM + Mbed TLS 1.3):   │
@@ -55,7 +55,7 @@ The server is a blind TCP proxy. It NEVER sees Apple credentials.
 └──────────────────────────────────────────────────────┘
 ```
 
-**Key invariant**: The server NEVER sees Apple credentials. All Apple TLS terminates at the browser via libcurl.js WASM (Mbed TLS 1.3). The server only receives public CDN URLs and non-secret metadata for IPA compilation. The bag proxy (`/api/bag`) only returns public Apple service URLs — no credentials pass through it.
+**Key invariant for this fork**: Apple TLS still terminates at the browser via libcurl.js WASM (Mbed TLS 1.3), but the server does store Apple account records for cross-device reuse. Protect `ACCESS_PASSWORD`, deploy behind HTTPS, and keep `DATA_DIR` private. The bag proxy (`/api/bag`) only returns public Apple service URLs.
 
 ## Reference Implementation
 
@@ -87,7 +87,7 @@ Device identifiers are **per-account**, not global:
 
 - Generated as 12 random hex chars (6 bytes) at account creation via `generateDeviceId()`
 - Editable during login, immutable after authentication
-- Stored in IndexedDB on the `Account` object as `deviceIdentifier`
+- Stored in the server account store on the `Account` object as `deviceIdentifier`
 - Passed to all Apple protocol calls (auth, purchase, download, version listing)
 
 ## Pod-Based Host Routing
@@ -134,7 +134,7 @@ The backend proxies the bag endpoint via `GET /api/bag?guid=<deviceId>` using No
 - React 19, React Router 7, Zustand for state
 - Tailwind CSS 4 for styling
 - Vite for build tooling
-- IndexedDB for credential storage (via `idb`)
+- Server-side encrypted account storage, with one-time IndexedDB migration via `idb`
 - `libcurl.js` (WASM) for browser-side TLS 1.3 via Mbed TLS — connects through Wisp protocol
 - `appleRequest()` in `frontend/src/apple/request.ts` wraps `libcurl.fetch` for all Apple API calls and forces HTTP/1.1 (`_libcurl_http_version: 1.1`)
 - Bag endpoint (`frontend/src/apple/bag.ts`) uses backend proxy (`/api/bag`) and falls back to `https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate` when `authenticateAccount` is missing or bag fetch fails
@@ -190,7 +190,7 @@ The backend proxies the bag endpoint via `GET /api/bag?guid=<deviceId>` using No
 
 ### Browser as Security Boundary
 
-Credentials (passwords, `passwordToken`, cookies) stored in IndexedDB are protected by the browser's same-origin policy. Encrypting them at rest would be security theater — the decryption key would also live in JS. The threat model assumes the browser environment is trusted; if an attacker has XSS, they can exfiltrate credentials regardless of at-rest encryption.
+Credentials (passwords, `passwordToken`, cookies) are saved server-side in `DATA_DIR/accounts.enc.json`, encrypted with key material derived from `ACCESS_PASSWORD`. This protects casual disk exposure but does not make the server zero-trust: backend code can decrypt account records. The browser environment must still be trusted; if an attacker has XSS, they can exfiltrate credentials after unlock.
 
 ### Backend Does Not Reflect Request Headers
 
@@ -223,14 +223,14 @@ cd frontend && npx vitest run   # jsdom environment with fake-indexeddb
 ```bash
 cd e2e && pnpm test                            # Local (requires Docker on port 8080)
 docker compose --profile test run --rm playwright  # Docker-based
-bash e2e/docker-test.sh                        # Full: build + test + zero-trust verify
+bash e2e/docker-test.sh                        # Full: build + test + credential-log scan
 ```
 
 E2E tests import from `./fixtures` instead of `@playwright/test`.
 
 WebSocket proxy tests use `location.host` to derive URLs dynamically, so they work both locally (`localhost:8080`) and in Docker (`asspp:8080`).
 
-Real-account Docker verification (2026-02-22): authentication succeeds through Wisp, and backend logs contain only connection/stream metadata (no Apple credentials, password tokens, or cookies).
+Real-account Docker verification (2026-02-22): authentication succeeds through Wisp, and backend logs should not print Apple credentials, password tokens, or cookies.
 
 E2E tests cover:
 
@@ -263,7 +263,7 @@ docker compose --profile test run --rm playwright
 
 This runs Playwright inside the official `mcr.microsoft.com/playwright` image, connecting to the app container via Docker internal DNS (`http://asspp:8080`). The `asspp` service has a healthcheck so the test container waits until the app is ready.
 
-The `e2e/docker-test.sh` script automates the full flow: build, test, and verify zero-trust by scanning backend logs for credential leaks.
+The `e2e/docker-test.sh` script automates the full flow: build, test, and scan backend logs for credential leaks.
 
 ## Interface Design System
 

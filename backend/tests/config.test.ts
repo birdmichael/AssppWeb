@@ -9,4 +9,8 @@ describe("config", () => {
   it("should have default data directory", () => {
     expect(config.dataDir).toBe("./data");
   });
+
+  it("should require default access password", () => {
+    expect(config.accessPassword).toBe("123456");
+  });
 });

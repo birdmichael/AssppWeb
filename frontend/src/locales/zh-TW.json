@@ -238,8 +238,8 @@
     },
     "data": {
       "title": "資料",
-      "description": "清除此瀏覽器中儲存的所有本機資料，包括帳號、憑證和設定。",
-      "confirm": "這將刪除所有帳號、憑證和設定，且無法復原。是否繼續？",
+      "description": "清除此實例中的伺服器帳號和本機設定。",
+      "confirm": "這將刪除伺服器儲存的帳號、憑證和本機設定，且無法復原。是否繼續？",
       "button": "重設所有資料",
       "exportBtn": "匯出帳號",
       "importBtn": "匯入帳號",
@@ -253,9 +253,9 @@
       "confirmBtn": "確認",
       "conflictTitle": "發現重複帳號",
       "conflictDesc": "在備份中發現 {{conflict}} 個相同的帳號以及 {{new}} 個新帳號。",
-      "conflictOverwrite": "覆蓋本機",
-      "conflictSkip": "保留本機 (僅新增新帳號)",
-      "cleared": "所有本機資料已清空"
+      "conflictOverwrite": "覆蓋伺服器",
+      "conflictSkip": "保留伺服器 (僅新增新帳號)",
+      "cleared": "伺服器帳號和本機設定已清空"
     },
     "about": {
       "title": "關於",

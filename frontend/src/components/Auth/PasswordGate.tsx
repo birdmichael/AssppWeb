@@ -56,8 +56,7 @@ export default function PasswordGate({ children }: { children: ReactNode }) {
         setStatus("required");
       })
       .catch(() => {
-        // If we can't reach the server, let the app load normally
-        setStatus("verified");
+        setStatus("required");
       });
   }, []);
 

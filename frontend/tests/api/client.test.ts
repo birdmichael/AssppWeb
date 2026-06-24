@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { apiGet, apiPost, apiDelete } from "../../src/api/client";
+import { apiGet, apiPost, apiPut, apiDelete } from "../../src/api/client";
 
 describe("api/client", () => {
   beforeEach(() => {
@@ -59,6 +59,26 @@ describe("api/client", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: undefined,
+      });
+    });
+  });
+
+  describe("apiPut", () => {
+    it("should make PUT request with JSON body", async () => {
+      const mockResponse = { email: "test@example.com" };
+      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve(mockResponse),
+      } as Response);
+
+      const result = await apiPut("/api/accounts/test%40example.com", {
+        email: "test@example.com",
+      });
+      expect(result).toEqual(mockResponse);
+      expect(fetch).toHaveBeenCalledWith("/api/accounts/test%40example.com", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "test@example.com" }),
       });
     });
   });

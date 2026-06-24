@@ -8,6 +8,7 @@ import { accessAuth } from "./middleware/accessAuth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { setupWsProxy } from "./services/wsProxy.js";
 import authRoutes from "./routes/auth.js";
+import accountsRoutes from "./routes/accounts.js";
 import searchRoutes from "./routes/search.js";
 import downloadRoutes from "./routes/downloads.js";
 import packageRoutes from "./routes/packages.js";
@@ -24,6 +25,7 @@ app.use(express.json({ limit: "50mb" }));
 // API routes
 app.use("/api", accessAuth);
 app.use("/api", authRoutes);
+app.use("/api", accountsRoutes);
 app.use("/api", searchRoutes);
 app.use("/api", downloadRoutes);
 app.use("/api", packageRoutes);

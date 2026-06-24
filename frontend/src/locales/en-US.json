@@ -238,8 +238,8 @@
     },
     "data": {
       "title": "Data",
-      "description": "Clear all local data including accounts, credentials, and settings stored in this browser.",
-      "confirm": "This will delete all accounts, credentials, and settings. This cannot be undone. Continue?",
+      "description": "Clear server-saved accounts and local settings for this instance.",
+      "confirm": "This will delete server-saved accounts, credentials, and local settings. This cannot be undone. Continue?",
       "button": "Reset All Data",
       "exportBtn": "Export Accounts",
       "importBtn": "Import Accounts",
@@ -253,9 +253,9 @@
       "confirmBtn": "Confirm",
       "conflictTitle": "Account Conflicts Detected",
       "conflictDesc": "Found {{conflict}} identical accounts and {{new}} new accounts in the backup.",
-      "conflictOverwrite": "Overwrite Local",
-      "conflictSkip": "Keep Local (Add New Only)",
-      "cleared": "All local data has been cleared"
+      "conflictOverwrite": "Overwrite Server",
+      "conflictSkip": "Keep Server (Add New Only)",
+      "cleared": "Server accounts and local settings have been cleared"
     },
     "about": {
       "title": "About",

@@ -4,9 +4,11 @@ A web-based tool for acquiring and installing iOS apps outside the App Store. Au
 
 ![preview](./resources/preview.png)
 
-## Zero-Trust Architecture
+## Server-Saved Account Architecture
 
-AssppWeb uses a zero-trust design where the server **never sees your Apple credentials**. All Apple API communication happens directly in your browser via WebAssembly (libcurl.js with Mbed TLS 1.3). The server only acts as a blind TCP relay (Wisp protocol) and handles IPA compilation from public CDN downloads.
+This build saves Apple account records on the server so the same AssppWeb instance can be used from multiple devices without adding the account on each browser. Account records are stored in `DATA_DIR/accounts.enc.json` and encrypted with a key derived from `ACCESS_PASSWORD`.
+
+All Apple API communication still happens from your browser via WebAssembly (libcurl.js with Mbed TLS 1.3), but the server now receives and stores account credentials, password tokens, and cookies through the `/api/accounts` endpoints. This is no longer strict zero-trust. Self-host this behind HTTPS, set a strong `ACCESS_PASSWORD`, and keep `DATA_DIR` private.
 
 > **⚠️ Important Security Notice:** There are no official Asspp Web instances. Use any public instance at your own risk. While the backend cannot read your encrypted traffic, a malicious host could serve a modified frontend to capture your credentials before encryption. Therefore, **do not blindly trust public instances**. We strongly recommend self-hosting your own instance or using one provided by a trusted partner. Always verify the SSL certificate and ensure you are connecting to a secure, authentic endpoint.
 
@@ -68,14 +70,14 @@ docker compose up -d
 | Variable                                    | Default         | Description                                                                                 |
 | ------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------- |
 | `PORT`                                      | `8080`          | Server listen port                                                                          |
-| `DATA_DIR`                                  | `./data`        | Directory for storing compiled IPAs                                                         |
+| `DATA_DIR`                                  | `./data`        | Directory for storing compiled IPAs and encrypted server-side accounts                       |
 | `PUBLIC_BASE_URL`                           | _(auto-detect)_ | Public URL for generating install manifests (e.g. `https://asspp.example.com`)              |
 | `UNSAFE_DANGEROUSLY_DISABLE_HTTPS_REDIRECT` | `false`         | Disable HTTPS redirect (see warning below)                                                  |
 | `AUTO_CLEANUP_DAYS`                         | `0`             | Automatically delete cached IPA files older than specified days (0 to disable)              |
 | `AUTO_CLEANUP_MAX_MB`                       | `0`             | Automatically delete oldest cached IPA files when size exceeds this MB limit (0 to disable) |
 | `MAX_DOWNLOAD_MB`                           | `0`             | Reject downloads exceeding this size in MB to prevent out-of-memory errors (0 to disable)   |
 | `DOWNLOAD_THREADS`                          | `8`             | Number of parallel threads for IPA downloads (1–32)                                         |
-| `ACCESS_PASSWORD`                           | _(none)_        | Require a password to access the web UI and API (empty to disable)                          |
+| `ACCESS_PASSWORD`                           | `123456`        | Required password for the web UI, API, Wisp proxy, and encrypted account store               |
 
 **Reverse Proxy (Required for Install Apps on iOS)**
 
@@ -91,7 +93,7 @@ asspp.example.com { reverse_proxy 127.0.0.1:8080 }
 
 **⚠️ Make Sure WebSocket Works**
 
-AssppWeb relies on the Wisp protocol over WebSocket (`/wisp/`) for its zero-trust architecture. Ensure your reverse proxy or CDN (e.g., Nginx, Cloudflare) is configured to allow WebSocket connections, otherwise the app will fail to communicate with Apple servers.
+AssppWeb relies on the Wisp protocol over WebSocket (`/wisp/`) for browser-side Apple API communication. Ensure your reverse proxy or CDN (e.g., Nginx, Cloudflare) is configured to allow WebSocket connections, otherwise the app will fail to communicate with Apple servers.
 
 </details>
 
