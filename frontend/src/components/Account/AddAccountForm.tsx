@@ -10,6 +10,8 @@ import { authenticate, AuthenticationError } from "../../apple/authenticate";
 import { getErrorMessage } from "../../utils/error";
 import { generateDeviceId } from "../../apple/config";
 
+import type { AuthenticationContinuation } from "../../apple/authenticate";
+
 export default function AddAccountForm() {
   const navigate = useNavigate();
   const { addAccount } = useAccounts();
@@ -21,6 +23,7 @@ export default function AddAccountForm() {
   const [code, setCode] = useState("");
   const [deviceId, setDeviceId] = useState(() => generateDeviceId());
   const [needsCode, setNeedsCode] = useState(false);
+  const [continuation, setContinuation] = useState<AuthenticationContinuation>();
   const [loading, setLoading] = useState(false);
   const inputClassName =
     "block min-h-11 w-full min-w-0 max-w-full rounded-xl border-0 bg-gray-100 px-3 py-2 text-base text-gray-900 focus:ring-2 focus:ring-blue-500/40 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-gray-800 dark:text-white";
@@ -39,15 +42,20 @@ export default function AddAccountForm() {
         needsCode && code ? code : undefined,
         undefined,
         cleanedDeviceId,
+        continuation,
       );
       await addAccount(account);
       addToast(t("accounts.addForm.addSuccess"), "success");
       navigate("/accounts");
     } catch (err) {
       if (err instanceof AuthenticationError && err.codeRequired) {
+        setContinuation(err.continuation);
         setNeedsCode(true);
         addToast(err.message, "error");
       } else {
+        setContinuation(undefined);
+        setNeedsCode(false);
+        setCode("");
         addToast(
           getErrorMessage(err, t("accounts.addForm.authFailed")),
           "error",
@@ -76,7 +84,12 @@ export default function AddAccountForm() {
                 type="text"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setContinuation(undefined);
+                  setNeedsCode(false);
+                  setCode("");
+                }}
                 disabled={loading}
                 placeholder={t("accounts.addForm.emailPlaceholder")}
                 className={inputClassName}
@@ -95,7 +108,12 @@ export default function AddAccountForm() {
                 type="password"
                 required
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setContinuation(undefined);
+                  setNeedsCode(false);
+                  setCode("");
+                }}
                 disabled={loading}
                 className={inputClassName}
               />
@@ -142,6 +160,7 @@ export default function AddAccountForm() {
                 </label>
                 <input
                   id="code"
+                  required
                   type="text"
                   inputMode="numeric"
                   pattern="[0-9]*"

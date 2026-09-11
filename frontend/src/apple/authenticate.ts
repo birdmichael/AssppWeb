@@ -1,10 +1,12 @@
 import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
-import { fetchBag, defaultAuthURL } from "./bag";
+import { fetchBag, validateAuthURL } from "./bag";
+import { machineIdentity } from "./machineIdentity";
 import { prepareSigner } from "./sap/client";
 import i18n from "../i18n";
 import type { AppleRequestOptions, AppleResponse } from './request';
+import type { BagOutput } from "./bag";
 import type { Account, Cookie } from '../types';
 
 const MAX_REQUEST_ATTEMPTS = 3;
@@ -13,19 +15,20 @@ const MAX_REQUEST_ATTEMPTS = 3;
 // Keep the body (including attempt and 2FA code) unchanged, but sign each send.
 async function sendAuthenticationRequest(
   options: AppleRequestOptions,
-  signer: Awaited<ReturnType<typeof prepareSigner>> | null,
+  signer: Awaited<ReturnType<typeof prepareSigner>>,
+  phase: string,
 ): Promise<AppleResponse> {
+  const statuses: number[] = [];
   for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
     const headers = { ...options.headers };
-    if (signer) {
-      headers['X-Apple-ActionSignature'] = await signer.sign(
-        new TextEncoder().encode(options.body),
-      );
-    }
+    headers['X-Apple-ActionSignature'] = await signer.sign(
+      new TextEncoder().encode(options.body),
+    );
     const response = await appleRequest({ ...options, headers });
     options.cookies = extractAndMergeCookies(
       response.rawHeaders, options.cookies ?? [],
     );
+    statuses.push(response.status);
     const transient = response.status === 204 || response.status === 404 ||
       (response.status >= 500 && response.status < 600);
     if (!transient) {
@@ -34,7 +37,7 @@ async function sendAuthenticationRequest(
     if (attempt === MAX_REQUEST_ATTEMPTS) {
       // Do not let the outer logical-login loop multiply transport retries.
       throw new AuthenticationError(
-        `Apple authentication: HTTP ${response.status} after ${MAX_REQUEST_ATTEMPTS} attempts`,
+        `Apple authentication: HTTP ${response.status} after ${MAX_REQUEST_ATTEMPTS} attempts (${options.host}${options.path.split("?")[0]}; ${phase}; SAP signed; statuses ${statuses.join(", ")})`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, attempt * 250));
@@ -42,10 +45,23 @@ async function sendAuthenticationRequest(
   throw new Error('Authentication retry limit exceeded');
 }
 
+// Kept only in the form's memory, never persisted or sent to our backend.
+export interface AuthenticationContinuation {
+  email: string;
+  deviceId: string;
+  expiresAt: number;
+  cookies: Cookie[];
+  endpoint: string;
+  storeFront: string;
+  pod?: string;
+  bag: BagOutput;
+}
+
 export class AuthenticationError extends Error {
   constructor(
     message: string,
     public readonly codeRequired: boolean = false,
+    public readonly continuation?: AuthenticationContinuation,
   ) {
     super(message);
     this.name = "AuthenticationError";
@@ -58,31 +74,23 @@ export async function authenticate(
   code?: string,
   existingCookies?: Cookie[],
   deviceId: string = "",
+  continuation?: AuthenticationContinuation,
 ): Promise<Account> {
-  let cookies: Cookie[] = existingCookies ? [...existingCookies] : [];
-  let storeFront = "";
-  let lastError: Error | null = null;
-
-  const defaultAuthEndpoint = new URL(defaultAuthURL);
-  defaultAuthEndpoint.searchParams.set("guid", deviceId);
-  let requestHost = defaultAuthEndpoint.hostname;
-  let requestPath = `${defaultAuthEndpoint.pathname}${defaultAuthEndpoint.search}`;
-
-  const bag = await fetchBag(deviceId);
-  const authEndpoint = new URL(bag.authURL);
-  authEndpoint.searchParams.set("guid", deviceId);
-  requestHost = authEndpoint.hostname;
-  requestPath = `${authEndpoint.pathname}${authEndpoint.search}`;
-
-  // When the bag advertises the SAP signing protocol, every request to the
-  // auth endpoint must carry X-Apple-ActionSignature over its body bytes.
-  // The signer sees only the hardware ID and public Apple assets — never the
-  // password — because signing happens here in the browser. It is kept as a
-  // singleton between attempts (2FA retries reuse the same session).
-  let sapSigner = null as Awaited<ReturnType<typeof prepareSigner>> | null;
-  if (bag.sapEndpoints) {
-    sapSigner = await prepareSigner(deviceId, bag.sapEndpoints);
+  deviceId = machineIdentity(deviceId).guid;
+  if (continuation && (!code || continuation.email !== email || continuation.deviceId !== deviceId || continuation.expiresAt < Date.now())) {
+    throw new AuthenticationError('Verification session expired or changed; start sign-in again');
   }
+  let cookies: Cookie[] = [...(continuation?.cookies ?? existingCookies ?? [])];
+  let storeFront = continuation?.storeFront ?? '';
+  let pod = continuation?.pod;
+  let lastError: Error | null = null;
+  const bag = continuation?.bag ?? await fetchBag(deviceId);
+  const authEndpoint = validateAuthURL(continuation?.endpoint ?? bag.authURL);
+  authEndpoint.searchParams.set('guid', deviceId);
+  let requestHost = authEndpoint.hostname;
+  let requestPath = authEndpoint.pathname + authEndpoint.search;
+  if (!bag.sapEndpoints) throw new AuthenticationError('Apple bag: SAP configuration missing');
+  const sapSigner = await prepareSigner(deviceId, bag.sapEndpoints);
 
   let currentAttempt = 0;
   let redirectAttempt = 0;
@@ -115,7 +123,7 @@ export async function authenticate(
         body: plistBody,
         cookies: requestCookies,
       };
-      const response = await sendAuthenticationRequest(options, sapSigner);
+      const response = await sendAuthenticationRequest(options, sapSigner, code ? 'verification' : 'password');
 
       cookies = options.cookies;
 
@@ -130,16 +138,21 @@ export async function authenticate(
 
       // Read pod
       const podHeader = response.headers["pod"];
-      const pod = podHeader || undefined;
+      pod = podHeader || pod;
 
-      // Handle redirect. The native /fast auth host can answer with 301 as
-      // well as the usual 302, so follow the full set of redirect statuses.
+      // Follow store pod redirects without changing the signed request body.
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers["location"];
         if (!location) {
           throw new Error(i18n.t("errors.auth.redirectLocation"));
         }
-        const url = new URL(location);
+        let url: URL;
+        try {
+          url = validateAuthURL(new URL(location, 'https://' + requestHost + requestPath).href);
+        } catch {
+          throw new AuthenticationError('Unsupported Apple authentication redirect endpoint');
+        }
+        url.searchParams.set('guid', deviceId);
         requestHost = url.hostname;
         requestPath = url.pathname + url.search;
         currentAttempt--;
@@ -150,7 +163,7 @@ export async function authenticate(
       // Handle non-plist responses (e.g. 403 with empty body)
       if (!response.body.trim()) {
         throw new AuthenticationError(
-          i18n.t("errors.auth.emptyBody", { status: response.status }),
+          i18n.t("errors.auth.emptyBody", { status: response.status }) + ` (${requestHost}${requestPath.split("?")[0]}; ${code ? "verification" : "password"}; SAP signed)`,
         );
       }
 
@@ -165,6 +178,9 @@ export async function authenticate(
         throw new AuthenticationError(
           i18n.t("errors.auth.requiresVerification"),
           true,
+          { email, deviceId, cookies, storeFront, pod, bag,
+            endpoint: 'https://' + requestHost + requestPath,
+            expiresAt: Date.now() + 10 * 60 * 1000 },
         );
       }
 
@@ -182,6 +198,10 @@ export async function authenticate(
       const address = accountInfo.address as Record<string, any>;
       if (!address) {
         throw new Error(failureMessage ?? i18n.t("errors.auth.missingAddress"));
+      }
+
+      if (response.status !== 200 || !dict.passwordToken || !dict.dsPersonId || dict.failureType) {
+        throw new AuthenticationError(failureMessage ?? 'Apple authentication response has no valid session token');
       }
 
       const account: Account = {

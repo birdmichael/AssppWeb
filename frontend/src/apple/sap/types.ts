@@ -19,7 +19,7 @@ export interface SapAssetBundle {
 }
 
 export interface SapSignerOptions extends SapEndpoints {
-  /** Per-account device identifier bytes (ASCII, 1..20 bytes). */
+  /** Per-account device identifier bytes (decoded hex, 1..20 bytes). */
   hardwareID: Uint8Array;
   assets: SapAssetBundle;
   wasmBinary?: ArrayBuffer;

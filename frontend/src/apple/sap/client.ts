@@ -7,6 +7,7 @@
 // account; concurrent callers share the same preparation. The zustand store
 // in store/sap.ts carries progress for the UI.
 
+import { machineIdentity } from "../machineIdentity";
 import { SapSigner, type SapMachineDriver } from "./signer";
 import { exchangeSetupBuffer, fetchSetupCertificate } from "./protocol";
 import { loadSapAssets } from "./assets";
@@ -162,6 +163,7 @@ export async function prepareSigner(
   hardwareID: string,
   endpoints: SapEndpoints,
 ): Promise<SapSigner> {
+  hardwareID = machineIdentity(hardwareID).guid;
   if (
     prepared &&
     prepared.hardwareID === hardwareID &&
@@ -217,7 +219,7 @@ async function runPreparation(
     const signer = await SapSigner.create(
       {
         ...endpoints,
-        hardwareID: new TextEncoder().encode(hardwareID),
+        hardwareID: machineIdentity(hardwareID).hardwareID,
         assets,
       },
       driver,

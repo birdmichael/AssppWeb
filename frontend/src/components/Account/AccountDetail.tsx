@@ -9,6 +9,8 @@ import { authenticate, AuthenticationError } from "../../apple/authenticate";
 import { getErrorMessage } from "../../utils/error";
 import { storeIdToCountry } from "../../apple/config";
 
+import type { AuthenticationContinuation } from "../../apple/authenticate";
+
 export default function AccountDetail() {
   const { email } = useParams<{ email: string }>();
   const navigate = useNavigate();
@@ -26,6 +28,7 @@ export default function AccountDetail() {
   const [reauthing, setReauthing] = useState(false);
   const [reauthCode, setReauthCode] = useState("");
   const [needsCode, setNeedsCode] = useState(false);
+  const [continuation, setContinuation] = useState<AuthenticationContinuation>();
 
   useEffect(() => {
     loadAccounts();
@@ -69,16 +72,22 @@ export default function AccountDetail() {
         needsCode && reauthCode ? reauthCode : undefined,
         account.cookies,
         account.deviceIdentifier,
+        continuation,
       );
       await updateAccount(updated);
+      setContinuation(undefined);
       setNeedsCode(false);
       setReauthCode("");
       addToast(t("accounts.detail.reauthSuccess"), "success");
     } catch (err) {
       if (err instanceof AuthenticationError && err.codeRequired) {
+        setContinuation(err.continuation);
         setNeedsCode(true);
         addToast(err.message, "error");
       } else {
+        setContinuation(undefined);
+        setNeedsCode(false);
+        setReauthCode("");
         addToast(
           getErrorMessage(err, t("accounts.detail.reauthFailed")),
           "error",
