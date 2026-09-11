@@ -41,4 +41,9 @@ describe('apple/bag', () => {
   it('accepts a store pod endpoint', () => {
     expect(validateAuthURL(config.authenticateAccount.replace('buy.', 'p18-buy.')).hostname).toBe('p18-buy.itunes.apple.com');
   });
+  it.each([false, true])('reads the optional update endpoint without requiring it for login (nested=%s)', async (nested) => {
+    const withUpdate = { ...config, updateProduct: 'https://downloaddispatch.itunes.apple.com/up/updateProduct' };
+    mockBag(nested ? { urlBag: withUpdate } : withUpdate);
+    expect((await fetchBag('AABBCCDDEEFF')).updateURL).toBe(withUpdate.updateProduct);
+  });
 });

@@ -168,7 +168,7 @@ The Wisp server validates target hosts via `hostname_whitelist` in `backend/src/
 - `buy.itunes.apple.com` — purchase endpoint
 - `init.itunes.apple.com` — bag endpoint
 - `/^p\d+-buy\.itunes\.apple\.com$/` — pod-based hosts
-- `downloaddispatch.itunes.apple.com` — redownload dispatch endpoint (failureType 5002 fallback)
+- `downloaddispatch.itunes.apple.com` — redownload fallback; after an empty version-pinned HTTP 500, retry the exact bag-advertised `/up/updateProduct` once and validate returned app/version identity
 - `uclient-api.itunes.apple.com` — public iOS catalog; resolve the account-region version for one retry after an unversioned redownload returns an empty HTTP 500
 - `s.mzstatic.com` — SAP setup certificate
 - `fpinit.itunes.apple.com` — SAP key exchange

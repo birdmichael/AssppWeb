@@ -2,14 +2,20 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { purchaseApp } from '../../src/apple/purchase';
 import { getDownloadInfo } from '../../src/apple/download';
 import { appleRequest } from '../../src/apple/request';
+import { fetchBag } from '../../src/apple/bag';
 import { buildPlist, parsePlist } from '../../src/apple/plist';
 import type { Account, Software } from '../../src/types';
+import type { BagOutput } from '../../src/apple/bag';
 vi.mock('../../src/apple/request', () => ({ appleRequest: vi.fn() }));
+vi.mock('../../src/apple/bag', () => ({ fetchBag: vi.fn() }));
 const account = { email: 'test@example.com', password: 'secret', passwordToken: 'token', directoryServicesIdentifier: '123', deviceIdentifier: 'AABBCCDDEEFF', store: '143465', storeFront: '143465-1,29', cookies: [] } as Account;
 const app = { id: 123456, price: 0 } as Software;
 const response = (dict: object, status = 200, headers: Record<string, string> = {}) => ({ status, statusText: '', body: buildPlist(dict), headers, rawHeaders: [] as [string, string][] });
 const download = () => response({ songList: [{ URL: 'https://example.com/app.ipa', metadata: { bundleShortVersionString: '1.0', bundleVersion: '1' }, sinfs: [{ id: 0, sinf: 'AQID' }] }] });
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(fetchBag).mockResolvedValue({} as BagOutput);
+});
 it('preserves the complete Apple storefront on license requests', async () => {
   vi.mocked(appleRequest).mockResolvedValue(response({ jingleDocType: 'purchaseSuccess', status: 0 }));
   await purchaseApp(account, app);

@@ -187,6 +187,18 @@ export function purchaseAPIHost(pod?: string): string {
   return "buy.itunes.apple.com";
 }
 
+// Accept only the exact public bag endpoint, without extra queries or userinfo.
+export function updateEndpoint(rawURL: string, deviceId: string): StoreDownloadEndpoint {
+  if (rawURL !== 'https://downloaddispatch.itunes.apple.com/up/updateProduct') {
+    throw new Error('Unsupported Apple update endpoint');
+  }
+  return {
+    host: 'downloaddispatch.itunes.apple.com',
+    path: '/up/updateProduct?guid=' + encodeURIComponent(deviceId),
+    externalVersionIdKey: 'appExtVrsId',
+  };
+}
+
 export function countryToStoreId(country: string): string | undefined {
   return countryCodeMap[country.toUpperCase()];
 }

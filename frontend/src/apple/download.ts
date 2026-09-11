@@ -2,10 +2,12 @@ import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
 import { CatalogLookupError, lookupCurrentIosVersion } from './catalogVersion';
+import { fetchBag } from './bag';
 import {
   RETRYABLE_FAILURE_TYPE,
   redownloadEndpoint,
   volumeStoreEndpoint,
+  updateEndpoint,
 } from "./config";
 import { storeDiagnostic, storeRedirect } from "./storeResponse";
 import i18n from "../i18n";
@@ -32,6 +34,7 @@ export async function getDownloadInfo(
   let requestHost = endpoint.host;
   let requestPath = endpoint.path;
   let triedRedownload = false;
+  let triedUpdate = false;
   let requestedVersionId = externalVersionId;
   let cookies = [...account.cookies];
   let redirectAttempt = 0;
@@ -76,9 +79,12 @@ export async function getDownloadInfo(
       if (!location) {
         throw new DownloadError(i18n.t("errors.download.redirectLocation"));
       }
-      const url = storeRedirect(location, requestHost, requestPath, [
+      const url = storeRedirect(location, requestHost, requestPath, triedUpdate ? ['/up/updateProduct'] : [
         '/WebObjects/MZFinance.woa/wa/volumeStoreDownloadProduct', '/r/redownload',
       ]);
+      if (triedUpdate && url.hostname !== 'downloaddispatch.itunes.apple.com') {
+        throw fail('Unsupported Apple update redirect endpoint');
+      }
       requestHost = url.hostname;
       requestPath = url.pathname + url.search;
       redirectAttempt++;
@@ -106,6 +112,22 @@ export async function getDownloadInfo(
         redirectAttempt = 0;
         continue;
       }
+      // Some apps still fail on the version-pinned dispatch request. Apple's
+      // bag-advertised updateProduct can serve the exact same version/session.
+      if (response.status === 500 && !response.body.trim() && requestedVersionId && !triedUpdate &&
+        requestHost === 'downloaddispatch.itunes.apple.com' && requestPath.split('?')[0] === '/r/redownload') {
+        const bag = await fetchBag(deviceId).catch(() => { throw fail('Apple update endpoint lookup failed'); });
+        if (!bag.updateURL) throw fail('Apple update endpoint missing in bag');
+        try { endpoint = updateEndpoint(bag.updateURL, deviceId); } catch {
+          throw fail('Unsupported Apple update endpoint');
+        }
+        triedUpdate = true;
+        attempts.push('retry=updateProduct');
+        requestHost = endpoint.host;
+        requestPath = endpoint.path;
+        redirectAttempt = 0;
+        continue;
+      }
       throw fail('Invalid Apple download response');
     }
     attempts.push(storeDiagnostic(response, requestHost, requestPath, dict));
@@ -115,7 +137,7 @@ export async function getDownloadInfo(
 
       // volumeStore intermittently returns 5002; retry once via the
       // redownload dispatch endpoint, which serves the same payload.
-      if (failureType === RETRYABLE_FAILURE_TYPE && !triedRedownload) {
+      if (failureType === RETRYABLE_FAILURE_TYPE && !triedRedownload && !triedUpdate) {
         triedRedownload = true;
         endpoint = redownloadEndpoint(deviceId);
         requestHost = endpoint.host;
@@ -156,6 +178,22 @@ export async function getDownloadInfo(
     }
 
     const songList = dict.songList as Record<string, any>[] | undefined;
+    if (triedUpdate) {
+      if (dict.customerMessage || dict.dialog || dict.action) {
+        const message = dict.customerMessage || dict.dialog?.explanation;
+        throw fail(typeof message === 'string' ? message : 'Apple update response requires account action');
+      }
+      if (response.status !== 200 || !Array.isArray(songList) || songList.length !== 1) {
+        throw fail('Apple update response must contain exactly one download item');
+      }
+      const metadata = songList[0]?.metadata;
+      if (String(metadata?.itemId) !== String(app.id) ||
+        String(metadata?.softwareVersionExternalIdentifier) !== requestedVersionId ||
+        typeof metadata?.softwareVersionBundleId !== 'string' || !metadata.softwareVersionBundleId ||
+        (app.bundleID && metadata.softwareVersionBundleId !== app.bundleID)) {
+        throw fail('Apple update response does not match the requested app or version');
+      }
+    }
     // The legacy endpoint can return HTTP 200 with an empty list instead of
     // failureType 5002. Try the existing dispatch route once, keeping the
     // authenticated session and translating the historical-version key.

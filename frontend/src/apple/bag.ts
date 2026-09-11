@@ -6,6 +6,7 @@ import type { SapEndpoints } from './sap/types';
 export interface BagOutput {
   authURL: string;
   sapEndpoints: SapEndpoints;
+  updateURL?: string;
 }
 
 // This plist protocol only supports the store authentication endpoint.
@@ -42,5 +43,8 @@ export async function fetchBag(deviceId: string): Promise<BagOutput> {
       throw new Error('Apple bag: unsupported SAP endpoint');
     }
   }
-  return { authURL, sapEndpoints: { setupURL, certificateURL, version } };
+  const updateURL = value('updateProduct');
+  return { authURL, sapEndpoints: { setupURL, certificateURL, version },
+    ...(typeof updateURL === 'string' ? { updateURL } : {}),
+  };
 }
