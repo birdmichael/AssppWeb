@@ -13,6 +13,8 @@ export function storeDiagnostic(response: AppleResponse, host: string, path: str
     if (['purchaseSuccess', 'failure', 'error'].includes(dict.jingleDocType)) fields.push('type=' + dict.jingleDocType);
     if (dict.action) fields.push('action=present');
     if (dict.dialog) fields.push('dialog=present');
+  } else {
+    fields.push('body=' + (response.body.trim() ? 'non-plist' : 'empty'));
   }
   return `HTTP ${response.status}; ${host}${path.split('?')[0]}${failure}${fields.length ? '; ' + fields.join('; ') : ''}`;
 }

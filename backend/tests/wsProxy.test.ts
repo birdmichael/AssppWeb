@@ -39,6 +39,9 @@ describe("Wisp Proxy", () => {
     );
     expect(allowed('s.mzstatic.com')).toBe(true);
     expect(allowed('fpinit.itunes.apple.com')).toBe(true);
+    expect(allowed('uclient-api.itunes.apple.com')).toBe(true);
+    expect(allowed('uclient-api.itunes.apple.com.example.org')).toBe(false);
+    expect(allowed('other.itunes.apple.com')).toBe(false);
     expect(allowed('s.mzstatic.com.example.org')).toBe(false);
     expect(allowed('example.org')).toBe(false);
     expect(allowed('127.0.0.1')).toBe(false);

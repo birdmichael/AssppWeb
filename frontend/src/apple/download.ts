@@ -1,6 +1,7 @@
 import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
+import { CatalogLookupError, lookupCurrentIosVersion } from './catalogVersion';
 import {
   RETRYABLE_FAILURE_TYPE,
   redownloadEndpoint,
@@ -31,9 +32,13 @@ export async function getDownloadInfo(
   let requestHost = endpoint.host;
   let requestPath = endpoint.path;
   let triedRedownload = false;
+  let requestedVersionId = externalVersionId;
   let cookies = [...account.cookies];
   let redirectAttempt = 0;
   const attempts: string[] = [];
+  const fail = (message: string, code?: string) => new DownloadError(
+    message + ' (' + attempts.join(' -> ') + ')', code,
+  );
 
   while (redirectAttempt <= 3) {
     const payload: Record<string, any> = {
@@ -43,8 +48,8 @@ export async function getDownloadInfo(
       salableAdamId: app.id,
     };
 
-    if (externalVersionId) {
-      payload[endpoint.externalVersionIdKey] = externalVersionId;
+    if (requestedVersionId) {
+      payload[endpoint.externalVersionIdKey] = requestedVersionId;
     }
 
     const plistBody = buildPlist(payload);
@@ -82,12 +87,28 @@ export async function getDownloadInfo(
 
     let dict: Record<string, any>;
     try { dict = parsePlist(response.body); } catch {
-      throw new DownloadError('Invalid Apple download response (' + storeDiagnostic(response, requestHost, requestPath) + ')');
+      attempts.push(storeDiagnostic(response, requestHost, requestPath));
+      // Unversioned iOS dispatch requests can return an empty HTTP 500. Resolve
+      // the account-region catalog version and retry once with appExtVrsId.
+      // Explicit historical versions and nonempty/server business errors stay intact.
+      if (response.status === 500 && !response.body.trim() && !requestedVersionId &&
+        requestHost === 'downloaddispatch.itunes.apple.com' && requestPath.split('?')[0] === '/r/redownload') {
+        try {
+          requestedVersionId = await lookupCurrentIosVersion(account, app);
+        } catch (error) {
+          throw fail(error instanceof CatalogLookupError ? error.message : 'Apple catalog lookup failed');
+        }
+        attempts.push('retry=current-iOS-version');
+        triedRedownload = true;
+        endpoint = redownloadEndpoint(deviceId);
+        requestHost = endpoint.host;
+        requestPath = endpoint.path;
+        redirectAttempt = 0;
+        continue;
+      }
+      throw fail('Invalid Apple download response');
     }
     attempts.push(storeDiagnostic(response, requestHost, requestPath, dict));
-    const fail = (message: string, code?: string) => new DownloadError(
-      message + ' (' + attempts.join(' -> ') + ')', code,
-    );
 
     if (dict.failureType) {
       const failureType = String(dict.failureType);
