@@ -87,8 +87,8 @@ describe("apple/config", () => {
     });
 
     it("should return default host when pod is undefined", () => {
-      expect(storeAPIHost()).toBe("p25-buy.itunes.apple.com");
-      expect(storeAPIHost(undefined)).toBe("p25-buy.itunes.apple.com");
+      expect(storeAPIHost()).toBe("buy.itunes.apple.com");
+      expect(storeAPIHost(undefined)).toBe("buy.itunes.apple.com");
     });
   });
 

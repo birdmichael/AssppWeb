@@ -1,4 +1,3 @@
-import type { Account, Software, VersionMetadata } from "../types";
 import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
@@ -7,6 +6,7 @@ import {
   redownloadEndpoint,
   volumeStoreEndpoint,
 } from "./config";
+import type { Account, Software, VersionMetadata } from "../types";
 
 export async function getVersionMetadata(
   account: Account,
@@ -28,6 +28,7 @@ export async function getVersionMetadata(
   while (redirectAttempt <= 3) {
     const payload: Record<string, any> = {
       creditDisplay: "",
+      serialNumber: "0",
       guid: deviceId,
       salableAdamId: app.id,
       [endpoint.externalVersionIdKey]: versionId,
@@ -50,7 +51,7 @@ export async function getVersionMetadata(
       cookies,
     });
 
-    cookies = extractAndMergeCookies(response.rawHeaders, cookies);
+    cookies = extractAndMergeCookies(response.rawHeaders, cookies, `https://${requestHost}${requestPath}`);
 
     if (response.status === 302) {
       const location = response.headers["location"];

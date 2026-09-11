@@ -148,7 +148,7 @@ export function generateDeviceId(): string {
 
 export function storeAPIHost(pod?: string): string {
   if (pod) return `p${pod}-buy.itunes.apple.com`;
-  return "p25-buy.itunes.apple.com";
+  return "buy.itunes.apple.com";
 }
 
 // The volumeStore endpoint intermittently rejects requests with failureType

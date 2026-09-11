@@ -190,3 +190,30 @@ describe("apple/cookies", () => {
     });
   });
 });
+
+describe('store session cookie scopes', () => {
+  it('retains same-name cookies at different domains and paths', () => {
+    const jar = mergeCookies([], [
+      makeCookie({ name: 'session', value: 'parent', domain: 'itunes.apple.com' }),
+      makeCookie({ name: 'session', value: 'pod', domain: 'p18-buy.itunes.apple.com' }),
+      makeCookie({ name: 'session', value: 'path', domain: 'itunes.apple.com', path: '/WebObjects' }),
+    ]);
+    expect(jar).toHaveLength(3);
+    expect(buildCookieHeader(jar, 'https://p18-buy.itunes.apple.com/WebObjects/test')).toBe('session=path; session=parent; session=pod');
+  });
+  it('replaces only the matching cookie scope', () => {
+    const jar = mergeCookies([makeCookie({ domain: 'itunes.apple.com' }), makeCookie({ domain: 'apple.com' })], [makeCookie({ domain: '.ITUNES.APPLE.COM', value: 'new' })]);
+    expect(jar).toHaveLength(2);
+    expect(jar.find(c => c.value === 'new')).toBeDefined();
+  });
+  it('restricts host-only cookies and derives the default path from the response URL', () => {
+    const jar = parseCookieHeaders(['session=secret; Secure'], 'https://buy.itunes.apple.com/WebObjects/login');
+    expect(buildCookieHeader(jar, 'https://buy.itunes.apple.com/WebObjects/buy')).toBe('session=secret');
+    expect(buildCookieHeader(jar, 'https://p18-buy.itunes.apple.com/WebObjects/buy')).toBe('');
+    expect(buildCookieHeader(jar, 'https://buy.itunes.apple.com/other')).toBe('');
+  });
+  it('gives Max-Age precedence over a later Expires attribute', () => {
+    const jar = parseCookieHeaders(['session=secret; Max-Age=0; Expires=Wed, 01 Jan 2099 00:00:00 GMT'], 'https://buy.itunes.apple.com/');
+    expect(buildCookieHeader(jar, 'https://buy.itunes.apple.com/')).toBe('');
+  });
+});

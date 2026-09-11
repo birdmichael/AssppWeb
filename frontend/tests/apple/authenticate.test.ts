@@ -185,6 +185,7 @@ describe("apple/authenticate", () => {
     expect(request.host).toBe('p18-buy.itunes.apple.com');
     expect(request.cookies).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'challenge', value: 'keep-me' })]));
     expect(account.store).toBe('143465');
+    expect(account.storeFront).toBe('143465-1,29');
     expect(account.pod).toBe('18');
   });
 

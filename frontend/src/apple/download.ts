@@ -1,4 +1,3 @@
-import type { Account, Software, DownloadOutput, Sinf } from "../types";
 import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
@@ -7,7 +6,9 @@ import {
   redownloadEndpoint,
   volumeStoreEndpoint,
 } from "./config";
+import { storeDiagnostic, storeRedirect } from "./storeResponse";
 import i18n from "../i18n";
+import type { Account, Software, DownloadOutput, Sinf } from "../types";
 
 export class DownloadError extends Error {
   constructor(
@@ -36,6 +37,7 @@ export async function getDownloadInfo(
   while (redirectAttempt <= 3) {
     const payload: Record<string, any> = {
       creditDisplay: "",
+      serialNumber: "0",
       guid: deviceId,
       salableAdamId: app.id,
     };
@@ -61,21 +63,29 @@ export async function getDownloadInfo(
       cookies,
     });
 
-    cookies = extractAndMergeCookies(response.rawHeaders, cookies);
+    cookies = extractAndMergeCookies(response.rawHeaders, cookies, `https://${requestHost}${requestPath}`);
 
-    if (response.status === 302) {
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers["location"];
       if (!location) {
         throw new DownloadError(i18n.t("errors.download.redirectLocation"));
       }
-      const url = new URL(location);
+      const url = storeRedirect(location, requestHost, requestPath, [
+        '/WebObjects/MZFinance.woa/wa/volumeStoreDownloadProduct', '/r/redownload',
+      ]);
       requestHost = url.hostname;
       requestPath = url.pathname + url.search;
       redirectAttempt++;
       continue;
     }
 
-    const dict = parsePlist(response.body) as Record<string, any>;
+    let dict: Record<string, any>;
+    try { dict = parsePlist(response.body); } catch {
+      throw new DownloadError('Invalid Apple download response (' + storeDiagnostic(response, requestHost, requestPath) + ')');
+    }
+    const fail = (message: string, code?: string) => new DownloadError(
+      message + ' (' + storeDiagnostic(response, requestHost, requestPath, dict) + ')', code,
+    );
 
     if (dict.failureType) {
       const failureType = String(dict.failureType);
@@ -95,24 +105,25 @@ export async function getDownloadInfo(
       switch (failureType) {
         case "2034":
         case "2042":
-          throw new DownloadError(
+        case "1008":
+          throw fail(
             i18n.t("errors.download.passwordExpired"),
             failureType,
           );
         case "9610":
-          throw new DownloadError(
+          throw fail(
             i18n.t("errors.download.licenseRequired"),
             "9610",
           );
         default: {
           if (customerMessage === "Your password has changed.") {
-            throw new DownloadError(
+            throw fail(
               i18n.t("errors.download.passwordExpired"),
               failureType,
             );
           }
           // If apple provides a specific string, we fall back to it, otherwise we use the localized default.
-          throw new DownloadError(
+          throw fail(
             customerMessage ??
               i18n.t("errors.download.downloadFailed", { failureType }),
             failureType,
@@ -122,25 +133,26 @@ export async function getDownloadInfo(
     }
 
     const songList = dict.songList as Record<string, any>[] | undefined;
-    if (!songList || songList.length === 0) {
-      throw new DownloadError(i18n.t("errors.download.noItems"));
+    if (response.status !== 200 || !Array.isArray(songList) || songList.length === 0) {
+      const message = dict.customerMessage || dict.dialog?.explanation;
+      throw fail(typeof message === 'string' ? message : i18n.t("errors.download.noItems"));
     }
 
     const item = songList[0];
     const url = item.URL as string;
     if (!url) {
-      throw new DownloadError(i18n.t("errors.download.missingUrl"));
+      throw fail(i18n.t("errors.download.missingUrl"));
     }
 
     const metadata = item.metadata as Record<string, any>;
     if (!metadata) {
-      throw new DownloadError(i18n.t("errors.download.missingMetadata"));
+      throw fail(i18n.t("errors.download.missingMetadata"));
     }
 
     const version = metadata.bundleShortVersionString as string;
     const bundleVersion = metadata.bundleVersion as string;
     if (!version || !bundleVersion) {
-      throw new DownloadError(i18n.t("errors.download.missingVersion"));
+      throw fail(i18n.t("errors.download.missingVersion"));
     }
 
     const sinfs: Sinf[] = [];
@@ -158,7 +170,7 @@ export async function getDownloadInfo(
           } else if (typeof sinf === "string") {
             sinfBase64 = sinf;
           } else {
-            throw new DownloadError(i18n.t("errors.download.invalidSinf"));
+            throw fail(i18n.t("errors.download.invalidSinf"));
           }
           sinfs.push({ id, sinf: sinfBase64 });
         }
@@ -166,7 +178,7 @@ export async function getDownloadInfo(
     }
 
     if (sinfs.length === 0) {
-      throw new DownloadError(i18n.t("errors.download.noSinf"));
+      throw fail(i18n.t("errors.download.noSinf"));
     }
 
     // Build iTunesMetadata plist

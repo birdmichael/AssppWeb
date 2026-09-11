@@ -3,6 +3,7 @@ import type { Cookie } from "../types";
 export function extractAndMergeCookies(
   rawHeaders: Iterable<[string, string]>,
   existingCookies: Cookie[],
+  responseURL?: string,
 ): Cookie[] {
   const setCookies: string[] = [];
   for (const [key, value] of rawHeaders) {
@@ -11,7 +12,7 @@ export function extractAndMergeCookies(
     }
   }
   if (setCookies.length > 0) {
-    return mergeCookies(existingCookies, parseCookieHeaders(setCookies));
+    return mergeCookies(existingCookies, parseCookieHeaders(setCookies, responseURL));
   }
   return existingCookies;
 }
@@ -21,11 +22,9 @@ export function mergeCookies(
   newCookies: Cookie[],
 ): Cookie[] {
   const dict = new Map<string, Cookie>();
-  for (const cookie of existing) {
-    dict.set(cookie.name, cookie);
-  }
-  for (const cookie of newCookies) {
-    dict.set(cookie.name, cookie);
+  // Cookie identity is name + domain + path, not name alone.
+  for (const cookie of [...existing, ...newCookies]) {
+    dict.set(JSON.stringify([cookie.name, cookie.domain?.replace(/^\./, "").toLowerCase() ?? "", cookie.path]), cookie);
   }
   return Array.from(dict.values());
 }
@@ -46,11 +45,11 @@ export function buildCookieHeader(cookies: Cookie[], url: string): string {
   const valid: string[] = [];
   const now = Date.now() / 1000;
 
-  for (const cookie of cookies) {
+  for (const cookie of [...cookies].sort((a, b) => b.path.length - a.path.length)) {
     if (!cookie.name || !cookie.value) continue;
 
     if (cookie.domain) {
-      if (!matchesDomain(cookie.domain, host)) continue;
+      if (cookie.hostOnly ? cookie.domain.toLowerCase() !== host : !matchesDomain(cookie.domain, host)) continue;
     }
 
     if (!matchesPath(cookie.path, path)) continue;
@@ -65,7 +64,8 @@ export function buildCookieHeader(cookies: Cookie[], url: string): string {
   return valid.join("; ");
 }
 
-export function parseCookieHeaders(setCookieHeaders: string[]): Cookie[] {
+export function parseCookieHeaders(setCookieHeaders: string[], responseURL?: string): Cookie[] {
+  const origin = responseURL ? new URL(responseURL) : undefined;
   const cookies: Cookie[] = [];
 
   for (const header of setCookieHeaders) {
@@ -80,8 +80,11 @@ export function parseCookieHeaders(setCookieHeaders: string[]): Cookie[] {
     const value = nameValue.substring(eqIdx + 1).trim();
     if (!name) continue;
 
-    let path = "/";
-    let domain: string | undefined;
+    const defaultPath = origin?.pathname.slice(0, origin.pathname.lastIndexOf("/")) || "/";
+    let path = defaultPath;
+    let domain: string | undefined = origin?.hostname;
+    let hostOnly = !!origin;
+    let maxAgeExpiry: number | undefined;
     let expiresAt: number | undefined;
     let httpOnly = false;
     let secure = false;
@@ -96,15 +99,16 @@ export function parseCookieHeaders(setCookieHeaders: string[]): Cookie[] {
 
       switch (attrName) {
         case "path":
-          path = attrVal || "/";
+          path = attrVal.startsWith("/") ? attrVal : defaultPath;
           break;
         case "domain":
-          domain = attrVal.startsWith(".") ? attrVal.substring(1) : attrVal;
+          domain = attrVal.replace(/^\./, "").toLowerCase();
+          hostOnly = false;
           break;
         case "max-age": {
           const maxAge = parseInt(attrVal, 10);
           if (!isNaN(maxAge)) {
-            expiresAt = Date.now() / 1000 + maxAge;
+            maxAgeExpiry = Date.now() / 1000 + maxAge;
           }
           break;
         }
@@ -124,14 +128,15 @@ export function parseCookieHeaders(setCookieHeaders: string[]): Cookie[] {
       }
     }
 
-    cookies.push({ name, value, path, domain, expiresAt, httpOnly, secure });
+    if (origin && domain && !matchesDomain(domain, origin.hostname)) continue;
+    cookies.push({ name, value, path, domain, expiresAt: maxAgeExpiry ?? expiresAt, httpOnly, secure, ...(origin ? { hostOnly } : {}) });
   }
 
   return cookies;
 }
 
 function matchesDomain(cookieDomain: string, requestHost: string): boolean {
-  const normalized = cookieDomain.toLowerCase();
+  const normalized = cookieDomain.replace(/^\./, "").toLowerCase();
   const host = requestHost.toLowerCase();
   return host === normalized || host.endsWith("." + normalized);
 }

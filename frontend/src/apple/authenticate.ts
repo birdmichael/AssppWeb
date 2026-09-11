@@ -27,6 +27,7 @@ async function sendAuthenticationRequest(
     const response = await appleRequest({ ...options, headers });
     options.cookies = extractAndMergeCookies(
       response.rawHeaders, options.cookies ?? [],
+      `https://${options.host}${options.path}`,
     );
     statuses.push(response.status);
     const transient = response.status === 204 || response.status === 404 ||
@@ -130,10 +131,7 @@ export async function authenticate(
       // Read store front
       const storeHeader = response.headers["x-set-apple-store-front"];
       if (storeHeader) {
-        const parts = storeHeader.split("-");
-        if (parts[0]) {
-          storeFront = parts[0];
-        }
+        storeFront = storeHeader;
       }
 
       // Read pod
@@ -208,7 +206,8 @@ export async function authenticate(
         email,
         password,
         appleId: (accountInfo.appleId as string) ?? "",
-        store: storeFront,
+        store: storeFront.split("-")[0],
+        storeFront,
         firstName: (address.firstName as string) ?? "",
         lastName: (address.lastName as string) ?? "",
         passwordToken: (dict.passwordToken as string) ?? "",

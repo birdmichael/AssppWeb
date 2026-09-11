@@ -24,6 +24,7 @@ export interface Cookie {
   value: string;
   path: string;
   domain?: string;
+  hostOnly?: boolean;
   expiresAt?: number;
   httpOnly: boolean;
   secure: boolean;
@@ -34,6 +35,8 @@ export interface Account {
   password: string;
   appleId: string;
   store: string;
+  /** Full X-Set-Apple-Store-Front value, distinct from the region ID. */
+  storeFront?: string;
   firstName: string;
   lastName: string;
   passwordToken: string;
