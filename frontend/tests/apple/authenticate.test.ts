@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildPlist } from "../../src/apple/plist";
+import { buildPlist, parsePlist } from "../../src/apple/plist";
 import { authenticate } from "../../src/apple/authenticate";
 import { appleRequest } from "../../src/apple/request";
 import { fetchBag } from "../../src/apple/bag";
@@ -21,7 +21,7 @@ vi.mock("../../src/apple/bag", () => ({
 
 describe("apple/authenticate", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
   });
 
   it('signs the exact UTF-8 request body including the verification code', async () => {
@@ -49,6 +49,79 @@ describe("apple/authenticate", () => {
     expect(sign).toHaveBeenCalledWith(new TextEncoder().encode(request.body));
     expect(request.headers?.['X-Apple-ActionSignature']).toBe('signed-body');
     expect(request.body).toContain('páss&amp;word123456');
+    expect(parsePlist(request.body!).attempt).toBe('1');
+    expect(request.headers?.['Content-Type']).toBe('application/x-www-form-urlencoded');
+  });
+
+  function setupSignedLogin() {
+    vi.mocked(fetchBag).mockResolvedValue({
+      authURL: 'https://buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate',
+      sapEndpoints: {
+        certificateURL: 'https://s.mzstatic.com/sap/setupCert.plist',
+        setupURL: 'https://fpinit.itunes.apple.com/v1/signSapSetup/legacy',
+        version: 200,
+      },
+    });
+    const sign = vi.fn().mockImplementation(async () => `signature-${sign.mock.calls.length}`);
+    vi.mocked(prepareSigner).mockResolvedValue({ sign } as any);
+    return sign;
+  }
+
+  const emptyResponse = (status: number) => ({
+    status, statusText: '', headers: {}, rawHeaders: [] as [string, string][], body: '',
+  });
+  const successResponse = () => ({
+    ...emptyResponse(200),
+    body: buildPlist({
+      accountInfo: { appleId: 'test@example.com', address: { firstName: 'Test', lastName: 'User' } },
+      passwordToken: 'token', dsPersonId: '123',
+    }),
+  });
+
+  it('recovers from 204 and 404 without changing the body or reusing signatures', async () => {
+    const sign = setupSignedLogin();
+    vi.mocked(appleRequest)
+      .mockResolvedValueOnce({ ...emptyResponse(204), rawHeaders: [['set-cookie', 'session=abc; Domain=.itunes.apple.com; Path=/']] })
+      .mockResolvedValueOnce(emptyResponse(404))
+      .mockResolvedValueOnce(successResponse());
+    const account = await authenticate('test@example.com', 'password', '123 456', undefined, 'aabbccddeeff');
+    expect(account.passwordToken).toBe('token');
+    expect(sign).toHaveBeenCalledTimes(3);
+    const calls = vi.mocked(appleRequest).mock.calls.map(([request]) => request);
+    expect(new Set(calls.map((request) => request.body)).size).toBe(1);
+    expect(calls.map((request) => request.headers?.['X-Apple-ActionSignature']))
+      .toEqual(['signature-1', 'signature-2', 'signature-3']);
+    expect(calls[1].cookies).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'session', value: 'abc' })]));
+    expect(parsePlist(calls[0].body!).password).toBe('password123456');
+    expect(parsePlist(calls[0].body!).attempt).toBe('1');
+  });
+
+  it.each([204, 503])('stops after three transient HTTP %i responses', async (status) => {
+    setupSignedLogin();
+    vi.mocked(appleRequest).mockResolvedValue(emptyResponse(status));
+    await expect(authenticate('test@example.com', 'password', '123456', undefined, 'aabbccddeeff'))
+      .rejects.toThrow(`HTTP ${status} after 3 attempts`);
+    expect(appleRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry an unsigned/rejected HTTP 403 response', async () => {
+    setupSignedLogin();
+    vi.mocked(appleRequest).mockResolvedValue(emptyResponse(403));
+    await expect(authenticate('test@example.com', 'password', '123456', undefined, 'aabbccddeeff')).rejects.toThrow();
+    expect(appleRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the signed body across pod redirects and transient retries', async () => {
+    setupSignedLogin();
+    vi.mocked(appleRequest)
+      .mockResolvedValueOnce({ ...emptyResponse(302), headers: { location: 'https://p18-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate?guid=aabbccddeeff' } })
+      .mockResolvedValueOnce(emptyResponse(204))
+      .mockResolvedValueOnce(successResponse());
+    await authenticate('test@example.com', 'password', '123456', undefined, 'aabbccddeeff');
+    const calls = vi.mocked(appleRequest).mock.calls.map(([request]) => request);
+    expect(calls.map((request) => request.host)).toEqual(['buy.itunes.apple.com', 'p18-buy.itunes.apple.com', 'p18-buy.itunes.apple.com']);
+    expect(new Set(calls.map((request) => request.body)).size).toBe(1);
+    expect(parsePlist(calls[2].body!).attempt).toBe('1');
   });
 
   it("sets guid query exactly once from bag endpoint", async () => {

@@ -1,10 +1,46 @@
-import type { Account, Cookie } from "../types";
 import { appleRequest } from "./request";
 import { buildPlist, parsePlist } from "./plist";
 import { extractAndMergeCookies } from "./cookies";
 import { fetchBag, defaultAuthURL } from "./bag";
 import { prepareSigner } from "./sap/client";
 import i18n from "../i18n";
+import type { AppleRequestOptions, AppleResponse } from './request';
+import type { Account, Cookie } from '../types';
+
+const MAX_REQUEST_ATTEMPTS = 3;
+
+// Match ipatool's bounded retry of transient authentication responses.
+// Keep the body (including attempt and 2FA code) unchanged, but sign each send.
+async function sendAuthenticationRequest(
+  options: AppleRequestOptions,
+  signer: Awaited<ReturnType<typeof prepareSigner>> | null,
+): Promise<AppleResponse> {
+  for (let attempt = 1; attempt <= MAX_REQUEST_ATTEMPTS; attempt++) {
+    const headers = { ...options.headers };
+    if (signer) {
+      headers['X-Apple-ActionSignature'] = await signer.sign(
+        new TextEncoder().encode(options.body),
+      );
+    }
+    const response = await appleRequest({ ...options, headers });
+    options.cookies = extractAndMergeCookies(
+      response.rawHeaders, options.cookies ?? [],
+    );
+    const transient = response.status === 204 || response.status === 404 ||
+      (response.status >= 500 && response.status < 600);
+    if (!transient) {
+      return response;
+    }
+    if (attempt === MAX_REQUEST_ATTEMPTS) {
+      // Do not let the outer logical-login loop multiply transport retries.
+      throw new AuthenticationError(
+        `Apple authentication: HTTP ${response.status} after ${MAX_REQUEST_ATTEMPTS} attempts`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+  }
+  throw new Error('Authentication retry limit exceeded');
+}
 
 export class AuthenticationError extends Error {
   constructor(
@@ -57,9 +93,9 @@ export async function authenticate(
     try {
       const body: Record<string, string> = {
         appleId: email,
-        attempt: code ? "2" : "4",
+        attempt: String(currentAttempt),
         guid: deviceId,
-        password: code ? `${password}${code}` : password,
+        password: code ? `${password}${code.replace(/\s/g, '')}` : password,
         rmp: "0",
         why: "signIn",
       };
@@ -67,27 +103,21 @@ export async function authenticate(
       const plistBody = buildPlist(body);
 
       const headers: Record<string, string> = {
-        "Content-Type": "application/x-apple-plist",
+        "Content-Type": "application/x-www-form-urlencoded",
       };
 
-      if (sapSigner) {
-        // The signature must cover the exact bytes on the wire; libcurl sends
-        // the body string as UTF-8, so sign its encoded form.
-        headers["X-Apple-ActionSignature"] = await sapSigner.sign(
-          new TextEncoder().encode(plistBody),
-        );
-      }
-
-      const response = await appleRequest({
+      const requestCookies = [...cookies];
+      const options = {
         method: "POST",
         host: requestHost,
         path: requestPath,
         headers,
         body: plistBody,
-        cookies,
-      });
+        cookies: requestCookies,
+      };
+      const response = await sendAuthenticationRequest(options, sapSigner);
 
-      cookies = extractAndMergeCookies(response.rawHeaders, cookies);
+      cookies = options.cookies;
 
       // Read store front
       const storeHeader = response.headers["x-set-apple-store-front"];
@@ -119,7 +149,7 @@ export async function authenticate(
 
       // Handle non-plist responses (e.g. 403 with empty body)
       if (!response.body.trim()) {
-        throw new Error(
+        throw new AuthenticationError(
           i18n.t("errors.auth.emptyBody", { status: response.status }),
         );
       }
