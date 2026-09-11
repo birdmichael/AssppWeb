@@ -64,3 +64,30 @@ it('keeps historical version and device parameters when falling back to redownlo
   expect(parsePlist(calls[1].body!).appExtVrsId).toBe('98765');
   expect(parsePlist(calls[1].body!).serialNumber).toBe('0');
 });
+
+it('tries redownload once after an HTTP 200 empty songList while retaining cookies and requested version', async () => {
+  vi.mocked(appleRequest).mockResolvedValueOnce({ ...response({ authorized: false, status: 0, songList: [] }), rawHeaders: [['set-cookie', 'session=continue; Domain=.itunes.apple.com; Path=/']] }).mockResolvedValueOnce(download());
+  const result = await getDownloadInfo(account, app, '98765');
+  expect(result.output.downloadURL).toBe('https://example.com/app.ipa');
+  const req = vi.mocked(appleRequest).mock.calls[1][0];
+  expect(req.host).toBe('downloaddispatch.itunes.apple.com');
+  expect(parsePlist(req.body!).appExtVrsId).toBe('98765');
+  expect(req.cookies).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'session', value: 'continue' })]));
+  expect(appleRequest).toHaveBeenCalledTimes(2);
+});
+it('reports both empty responses and authorization flags without repeating forever or leaking values', async () => {
+  vi.mocked(appleRequest).mockResolvedValue(response({ authorized: false, status: 0, songList: [], passwordToken: 'secret-token', accountInfo: { appleId: 'private@example.com' } }));
+  const err = await getDownloadInfo(account, app).catch(e => e);
+  expect(appleRequest).toHaveBeenCalledTimes(2);
+  expect(err.message).toContain('authorized=false');
+  expect(err.message).toContain('volumeStoreDownloadProduct');
+  expect(err.message).toContain('/r/redownload');
+  expect(err.message).not.toContain('secret-token');
+  expect(err.message).not.toContain('private@example.com');
+  expect(err.message).not.toContain('AABBCCDDEEFF');
+});
+it.each([{ failureType: '9610' }, { failureType: '1008' }, { dialog: { explanation: 'Review terms' } }])('does not retry explicit business errors through redownload', async (dict) => {
+  vi.mocked(appleRequest).mockResolvedValue(response(dict));
+  await expect(getDownloadInfo(account, app)).rejects.toThrow();
+  expect(appleRequest).toHaveBeenCalledTimes(1);
+});

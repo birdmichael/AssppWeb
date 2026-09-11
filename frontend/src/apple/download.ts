@@ -33,6 +33,7 @@ export async function getDownloadInfo(
   let triedRedownload = false;
   let cookies = [...account.cookies];
   let redirectAttempt = 0;
+  const attempts: string[] = [];
 
   while (redirectAttempt <= 3) {
     const payload: Record<string, any> = {
@@ -83,8 +84,9 @@ export async function getDownloadInfo(
     try { dict = parsePlist(response.body); } catch {
       throw new DownloadError('Invalid Apple download response (' + storeDiagnostic(response, requestHost, requestPath) + ')');
     }
+    attempts.push(storeDiagnostic(response, requestHost, requestPath, dict));
     const fail = (message: string, code?: string) => new DownloadError(
-      message + ' (' + storeDiagnostic(response, requestHost, requestPath, dict) + ')', code,
+      message + ' (' + attempts.join(' -> ') + ')', code,
     );
 
     if (dict.failureType) {
@@ -133,6 +135,20 @@ export async function getDownloadInfo(
     }
 
     const songList = dict.songList as Record<string, any>[] | undefined;
+    // The legacy endpoint can return HTTP 200 with an empty list instead of
+    // failureType 5002. Try the existing dispatch route once, keeping the
+    // authenticated session and translating the historical-version key.
+    const emptyList = songList === undefined || (Array.isArray(songList) && songList.length === 0);
+    if (response.status === 200 && emptyList && !triedRedownload &&
+      !dict.failureType && !dict.customerMessage && !dict.dialog && !dict.action &&
+      (dict.status === undefined || dict.status === 0)) {
+      triedRedownload = true;
+      endpoint = redownloadEndpoint(deviceId);
+      requestHost = endpoint.host;
+      requestPath = endpoint.path;
+      redirectAttempt = 0;
+      continue;
+    }
     if (response.status !== 200 || !Array.isArray(songList) || songList.length === 0) {
       const message = dict.customerMessage || dict.dialog?.explanation;
       throw fail(typeof message === 'string' ? message : i18n.t("errors.download.noItems"));
