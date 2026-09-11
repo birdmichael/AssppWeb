@@ -81,7 +81,9 @@ jobs:
         run: |
           docker run -d --name assppweb-smoke -p 127.0.0.1:8080:8080 assppweb-smoke:test
           trap 'docker logs assppweb-smoke; docker rm -f assppweb-smoke' EXIT
-          curl --fail --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:8080/api/settings
+          # Docker may accept and reset a connection before Node starts listening.
+          # Retry receive errors too, but fail within a bounded readiness window.
+          curl --fail --show-error --silent --retry 15 --retry-all-errors --retry-delay 2 --connect-timeout 2 --max-time 5 --retry-max-time 60 http://127.0.0.1:8080/api/settings
           curl --fail -X POST http://127.0.0.1:8080/api/sap-assets/prepare
           for asset in CommerceKit CommerceCore CoreFP CoreFP.icxs; do
             curl --fail --max-time 30 --compressed "http://127.0.0.1:8080/api/sap-assets/$asset" -o /dev/null
@@ -104,3 +106,4 @@ jobs:
           IMAGE: ${{ steps.image.outputs.name }}
           DIGEST: ${{ steps.publish.outputs.digest }}
         run: echo "$IMAGE@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
