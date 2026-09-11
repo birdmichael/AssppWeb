@@ -3,6 +3,7 @@ import { createServer, Server } from "http";
 import net from "net";
 import { WebSocket } from "ws";
 import express from "express";
+import { server as wisp } from '@mercuryworkshop/wisp-js/server';
 import { setupWsProxy } from "../src/services/wsProxy.js";
 
 let httpServer: Server | null = null;
@@ -31,6 +32,19 @@ async function stopServer() {
 }
 
 describe("Wisp Proxy", () => {
+  it('allows the SAP handshake hosts without allowing unrelated targets', () => {
+    const allowed = (host: string) => wisp.options.hostname_whitelist.some(
+      (pattern: string | RegExp) => typeof pattern === 'string'
+        ? pattern === host : pattern.test(host),
+    );
+    expect(allowed('s.mzstatic.com')).toBe(true);
+    expect(allowed('fpinit.itunes.apple.com')).toBe(true);
+    expect(allowed('s.mzstatic.com.example.org')).toBe(false);
+    expect(allowed('example.org')).toBe(false);
+    expect(allowed('127.0.0.1')).toBe(false);
+    expect(wisp.options.port_whitelist).toEqual([443]);
+  });
+
   afterEach(async () => {
     await stopServer();
   });

@@ -1,5 +1,26 @@
 # AssppWeb
 
+This fork integrates [upstream PR #89](https://github.com/Lakr233/AssppWeb/pull/89)
+at `835a54dd773caeaa6ad6b342d5cde1bf3e6ceb29` for browser-side SAP signing,
+with the SAP handshake hosts added to the Wisp allowlist and a repaired image
+publishing workflow. Apple account sign-in on real iOS devices still needs
+verification; this is an experimental fork.
+
+The `Test and Publish Docker Image` workflow tests both applications, checks
+the container and bundled SAP assets, then publishes `linux/amd64` and
+`linux/arm64` images to `ghcr.io/lge6/assppweb:pr89` (also `latest` and a
+commit-specific `sha-...` tag). Enable Actions in the fork if GitHub has
+disabled them. After the first publication, set the package visibility to
+Public in GitHub Packages to allow anonymous pulls.
+
+```bash
+docker pull ghcr.io/lge6/assppweb:pr89
+docker compose up -d
+```
+
+The deployment examples below are inherited from upstream and refer to its
+image; use this fork's image above when deploying the SAP signing version.
+
 A web-based tool for acquiring and installing iOS apps outside the App Store. Authenticate with your Apple ID, search for apps, acquire licenses, and install IPAs directly to your device.
 
 ![preview](./resources/preview.png)
