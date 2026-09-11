@@ -214,4 +214,13 @@ describe("apple/authenticate", () => {
     expect(error.message).toContain('verification; SAP signed; statuses 404, 404, 404');
     for (const secret of ['test@example.com', 'secret-password', '123456', 'AABBCCDDEEFF', '?guid=']) expect(error.message).not.toContain(secret);
   });
+  it('stops on a redirect without Location and provides redacted response context', async () => {
+    setupSignedLogin();
+    vi.mocked(appleRequest).mockResolvedValue({ ...emptyResponse(302), body: 'private non-plist response' });
+    const err = await authenticate('test@example.com', 'password', undefined, undefined, 'aabbccddeeff').catch(e => e);
+    expect(err.message).toContain('HTTP 302');
+    expect(err.message).toContain('Location=missing; body=other; freshSession=true');
+    expect(err.message).not.toContain('private non-plist response');
+    expect(appleRequest).toHaveBeenCalledTimes(1);
+  });
 });

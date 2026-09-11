@@ -3,7 +3,8 @@ import { useAccounts } from "./useAccounts";
 import { useToastStore } from "../store/toast";
 import { useDownloadsStore } from "../store/downloads";
 import { getDownloadInfo } from "../apple/download";
-import { purchaseApp } from "../apple/purchase";
+import { authenticate } from "../apple/authenticate";
+import { purchaseApp, PurchaseError } from "../apple/purchase";
 import { apiPost, apiGet } from "../api/client";
 import { accountHash } from "../utils/account";
 import { getErrorMessage } from "../utils/error";
@@ -78,10 +79,21 @@ export function useDownloadAction() {
     const ctx = getAccountContext(account, t);
     const appName = app.name;
 
-    // Use the authenticated session. A hidden password-only login can start
-    // a new 2FA challenge and invalidate the session the user just established.
-    const result = await purchaseApp(account, app);
-    await updateAccount({ ...account, cookies: result.updatedCookies });
+    let currentAccount = account;
+    let result;
+    try {
+      result = await purchaseApp(currentAccount, app);
+    } catch (error) {
+      if (!(error instanceof PurchaseError) || !['2034', '2042'].includes(error.code ?? '')) throw error;
+      // Renew only a rejected token, in a clean session. Never swallow 2FA
+      // or redirect errors and then continue purchasing with the old token.
+      currentAccount = await authenticate(
+        account.email, account.password, undefined, undefined, account.deviceIdentifier,
+      );
+      await updateAccount(currentAccount);
+      result = await purchaseApp(currentAccount, app);
+    }
+    await updateAccount({ ...currentAccount, cookies: result.updatedCookies });
 
     addToast(
       t("toast.msg", { appName, ...ctx }),

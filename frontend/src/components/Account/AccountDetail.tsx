@@ -70,7 +70,7 @@ export default function AccountDetail() {
         account.email,
         account.password,
         needsCode && reauthCode ? reauthCode : undefined,
-        account.cookies,
+        undefined, // Start a new session; the 2FA continuation carries fresh cookies.
         account.deviceIdentifier,
         continuation,
       );

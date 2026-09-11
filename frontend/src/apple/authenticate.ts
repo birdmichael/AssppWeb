@@ -142,7 +142,13 @@ export async function authenticate(
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers["location"];
         if (!location) {
-          throw new Error(i18n.t("errors.auth.redirectLocation"));
+          // A missing Location cannot be repaired by inventing a pod URL.
+          // Stop here instead of silently posting a second password attempt.
+          const bodyKind = !response.body.trim() ? 'empty' : response.body.includes('<plist') ? 'plist' : 'other';
+          throw new AuthenticationError(
+            i18n.t("errors.auth.redirectLocation") +
+            ` (HTTP ${response.status}; ${requestHost}${requestPath.split('?')[0]}; Location=missing; body=${bodyKind}; freshSession=${!existingCookies?.length})`,
+          );
         }
         let url: URL;
         try {

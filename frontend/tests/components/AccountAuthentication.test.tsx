@@ -34,6 +34,7 @@ it('the add form passes the challenge into the verification request', async () =
   fireEvent.click(screen.getByRole('button', { name: 'accounts.addForm.verify' }));
   await waitFor(() => expect(mocks.addAccount).toHaveBeenCalled());
   expect(vi.mocked(authenticate).mock.calls[1][5]).toBe(continuation);
+  expect(vi.mocked(authenticate).mock.calls[0][3]).toBeUndefined();
 });
 it('editing the password abandons the previous challenge', async () => {
   await startAdd();
