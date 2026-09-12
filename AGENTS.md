@@ -160,6 +160,10 @@ After authentication, Apple returns a `pod` header:
 - Pod is stored on the Account object and used for all subsequent API calls
 - Functions: `storeAPIHost(pod?)` and `purchaseAPIHost(pod?)` in `frontend/src/apple/config.ts`
 
+Reauthentication starts with fresh cookies but retains the existing account's routing. Prefer its last successful, validated `authEndpoint` (without the `guid` query); legacy accounts use their Apple-assigned pod. Accounts with no known route still use the bag endpoint. A live 2FA continuation takes precedence over saved routing and carries its own cookies. Token-only refresh responses may reuse the stored profile only when Apple returns the same DSID. Never guess a default pod for authentication or send credentials to an unvalidated endpoint.
+
+Authentication, purchase, bag, and SAP setup use `apple/plistResponse.ts` to accept plist dictionaries, bare dictionaries, and Apple's `Document` XML wrapper. HTML and malformed XML remain failures, with stage/HTTP/endpoint diagnostics that omit response bodies and query values. License renewal is bounded to one attempt and preserves the original purchase error if renewal fails.
+
 ## Dynamic Host Validation (Backend)
 
 The Wisp server validates target hosts via `hostname_whitelist` in `backend/src/services/wsProxy.ts`:

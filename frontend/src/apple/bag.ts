@@ -1,5 +1,5 @@
 import { authHeaders } from '../api/client';
-import { parsePlist } from './plist';
+import { readPlistResponse } from './plistResponse';
 import { SUPPORTED_SAP_VERSION } from './sap/types';
 import type { SapEndpoints } from './sap/types';
 
@@ -26,7 +26,7 @@ export async function fetchBag(deviceId: string): Promise<BagOutput> {
   if (!resp.ok) {
     throw new Error('Apple bag: HTTP ' + resp.status + '; login stopped before sending credentials');
   }
-  const dict = parsePlist(await resp.text()) as Record<string, any>;
+  const dict = readPlistResponse({ status: resp.status, body: await resp.text() }, 'bag', 'init.itunes.apple.com', '/bag.xml');
   const value = (key: string) => dict[key] ?? dict.urlBag?.[key];
   const authURL = value('authenticateAccount');
   if (typeof authURL !== 'string') throw new Error('Apple bag: authentication endpoint missing');

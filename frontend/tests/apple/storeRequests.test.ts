@@ -21,6 +21,22 @@ it('preserves the complete Apple storefront on license requests', async () => {
   await purchaseApp(account, app);
   expect(vi.mocked(appleRequest).mock.calls[0][0].headers?.['X-Apple-Store-Front']).toBe('143465-1,29');
 });
+it('recognizes license acquisition in an Apple Document envelope', async () => {
+  const xml = '<Document><dict><key>jingleDocType</key><string>purchaseSuccess</string><key>status</key><integer>0</integer></dict></Document>';
+  vi.mocked(appleRequest).mockResolvedValue({ ...response({}), body: xml });
+  await expect(purchaseApp(account, app)).resolves.toBeDefined();
+  expect(appleRequest).toHaveBeenCalledTimes(1);
+});
+it('preserves a wrapped token-expiry error for the renewal flow', async () => {
+  const xml = '<Document><dict><key>failureType</key><string>2034</string></dict></Document>';
+  vi.mocked(appleRequest).mockResolvedValue({ ...response({}), body: xml });
+  await expect(purchaseApp(account, app)).rejects.toMatchObject({ code: '2034' });
+});
+it('reports non-plist license responses with purchase phase and no private content', async () => {
+  vi.mocked(appleRequest).mockResolvedValue({ ...response({}), body: '<html>private-token</html>' });
+  await expect(purchaseApp(account, app)).rejects.toThrow('Apple purchase: invalid plist response (HTTP 200; buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/buyProduct; body=html)');
+  expect(appleRequest).toHaveBeenCalledTimes(1);
+});
 it('uses the generic store dispatch without inventing a pod and includes serialNumber', async () => {
   vi.mocked(appleRequest).mockResolvedValue(download());
   await getDownloadInfo(account, app);

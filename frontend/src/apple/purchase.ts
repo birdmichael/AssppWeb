@@ -1,5 +1,6 @@
 import { appleRequest } from "./request";
-import { buildPlist, parsePlist } from "./plist";
+import { buildPlist } from "./plist";
+import { readPlistResponse } from './plistResponse';
 import { extractAndMergeCookies } from "./cookies";
 import { storeDiagnostic, storeRedirect } from "./storeResponse";
 import { purchaseAPIHost } from "./config";
@@ -84,8 +85,8 @@ async function purchaseWithParams(
   }
   if (!response) throw new PurchaseError('No Apple purchase response');
   let dict: Record<string, any>;
-  try { dict = parsePlist(response.body); } catch {
-    throw new PurchaseError('Invalid Apple purchase response (' + storeDiagnostic(response, host, path) + ')');
+  try { dict = readPlistResponse(response, 'purchase', host, path); } catch (error) {
+    throw new PurchaseError((error as Error).message);
   }
   const fail = (message: string, code?: string) => new PurchaseError(
     message + ' (' + storeDiagnostic(response!, host, path, dict) + ')', code,

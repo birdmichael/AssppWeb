@@ -51,4 +51,7 @@ it('reauthentication also passes the fresh challenge instead of only saved accou
   fireEvent.click(screen.getByRole('button', { name: 'accounts.detail.verify' }));
   await waitFor(() => expect(mocks.updateAccount).toHaveBeenCalled());
   expect(vi.mocked(authenticate).mock.calls[1][5]).toBe(continuation);
+  expect(vi.mocked(authenticate).mock.calls[0][6]).toBe(account);
+  expect(vi.mocked(authenticate).mock.calls[1][6]).toBe(account);
+  expect(vi.mocked(authenticate).mock.calls[0][3]).toBeUndefined();
 });

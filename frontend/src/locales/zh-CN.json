@@ -448,7 +448,8 @@
       "termsRequired": "您必须接受条款与条件：{{url}}",
       "failed": "购买失败：{{failureType}}",
       "failedGeneral": "购买应用失败",
-      "unknownError": "发生未知错误"
+      "unknownError": "发生未知错误",
+      "reauthenticationFailed": "重新认证失败：{{reason}}。请在账号详情完成重新认证及验证码验证，再重试获取许可证。"
     },
     "auth": {
       "requiresVerification": "验证需要双重认证代码。如果没有弹出验证码，请尝试在 https://account.apple.com 登录以触发提示，然后在双重认证代码字段中填写该代码。",

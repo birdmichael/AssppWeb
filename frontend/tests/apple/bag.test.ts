@@ -8,7 +8,7 @@ const config = {
   'sign-sap-setup-cert': 'https://s.mzstatic.com/sap/setupCert.plist',
   'sign-sap-version': 200,
 };
-const mockBag = (dict: object) => vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, text: async () => buildPlist(dict) }));
+const mockBag = (dict: object) => vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => buildPlist(dict) }));
 
 describe('apple/bag', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -21,6 +21,10 @@ describe('apple/bag', () => {
   it('fails explicitly when the bag proxy fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 502 }));
     await expect(fetchBag('AABBCCDDEEFF')).rejects.toThrow('Apple bag: HTTP 502');
+  });
+  it('identifies an HTML bag response without leaking its content', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '<html>private-response</html>' }));
+    await expect(fetchBag('AABBCCDDEEFF')).rejects.toThrow('Apple bag: invalid plist response (HTTP 200; init.itunes.apple.com/bag.xml; body=html)');
   });
   it('does not silently continue unsigned when SAP data is missing', async () => {
     mockBag({ authenticateAccount: config.authenticateAccount });

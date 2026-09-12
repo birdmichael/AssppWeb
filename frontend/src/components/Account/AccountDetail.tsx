@@ -73,6 +73,7 @@ export default function AccountDetail() {
         undefined, // Start a new session; the 2FA continuation carries fresh cookies.
         account.deviceIdentifier,
         continuation,
+        account,
       );
       await updateAccount(updated);
       setContinuation(undefined);

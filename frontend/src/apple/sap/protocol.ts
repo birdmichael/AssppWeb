@@ -4,15 +4,18 @@
 // Apple API call. Ported from ipatool's internal/sap/protocol.go.
 
 import { appleRequest } from "../request";
-import { buildPlist, parsePlist } from "../plist";
+import { buildPlist } from "../plist";
+import { readPlistResponse } from '../plistResponse';
+import type { AppleResponse } from '../request';
 import type { SapEndpoints } from "./types";
 
 const SETUP_CERTIFICATE_KEY = "sign-sap-setup-cert";
 const SETUP_BUFFER_KEY = "sign-sap-setup-buffer";
 const MAX_SETUP_BODY = 1 << 20;
 
-function plistBytes(document: string, key: string): Uint8Array {
-  const values = parsePlist(document) as Record<string, unknown>;
+function plistBytes(response: AppleResponse, key: string, phase: string, endpoint: string): Uint8Array {
+  const url = new URL(endpoint);
+  const values = readPlistResponse(response, phase, url.hostname, url.pathname);
   const value = values[key];
   if (!(value instanceof Uint8Array) || value.length === 0) {
     throw new Error(`Apple plist is missing ${key}`);
@@ -34,7 +37,7 @@ export async function fetchSetupCertificate(
   if (response.body.length > MAX_SETUP_BODY) {
     throw new Error("SAP certificate response exceeds 1 MiB");
   }
-  return plistBytes(response.body, SETUP_CERTIFICATE_KEY);
+  return plistBytes(response, SETUP_CERTIFICATE_KEY, 'SAP certificate', endpoints.certificateURL);
 }
 
 export async function exchangeSetupBuffer(
@@ -58,5 +61,5 @@ export async function exchangeSetupBuffer(
   if (response.body.length > MAX_SETUP_BODY) {
     throw new Error("SAP setup response exceeds 1 MiB");
   }
-  return plistBytes(response.body, SETUP_BUFFER_KEY);
+  return plistBytes(response, SETUP_BUFFER_KEY, 'SAP setup', endpoints.setupURL);
 }

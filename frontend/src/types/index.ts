@@ -44,6 +44,8 @@ export interface Account {
   cookies: Cookie[];
   deviceIdentifier: string;
   pod?: string;
+  /** Last successful validated authentication URL; query GUID is not persisted. */
+  authEndpoint?: string;
 }
 
 export interface Sinf {

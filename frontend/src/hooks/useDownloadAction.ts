@@ -87,9 +87,17 @@ export function useDownloadAction() {
       if (!(error instanceof PurchaseError) || !['2034', '2042'].includes(error.code ?? '')) throw error;
       // Renew only a rejected token, in a clean session. Never swallow 2FA
       // or redirect errors and then continue purchasing with the old token.
-      currentAccount = await authenticate(
-        account.email, account.password, undefined, undefined, account.deviceIdentifier,
-      );
+      try {
+        currentAccount = await authenticate(
+          account.email, account.password, undefined, undefined, account.deviceIdentifier, undefined, account,
+        );
+      } catch (renewalError) {
+        throw new PurchaseError(
+          error.message + ' → ' + t('errors.purchase.reauthenticationFailed', {
+            reason: getErrorMessage(renewalError, t('accounts.detail.reauthFailed')),
+          }), error.code,
+        );
+      }
       await updateAccount(currentAccount);
       result = await purchaseApp(currentAccount, app);
     }

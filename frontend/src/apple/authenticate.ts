@@ -1,5 +1,6 @@
 import { appleRequest } from "./request";
-import { buildPlist, parsePlist } from "./plist";
+import { buildPlist } from "./plist";
+import { parseApplePlist, readPlistResponse } from './plistResponse';
 import { extractAndMergeCookies } from "./cookies";
 import { fetchBag, validateAuthURL } from "./bag";
 import { machineIdentity } from "./machineIdentity";
@@ -32,6 +33,11 @@ async function sendAuthenticationRequest(
     statuses.push(response.status);
     const transient = response.status === 204 || response.status === 404 ||
       (response.status >= 500 && response.status < 600);
+    if (transient) {
+      // A structured Apple refusal is actionable; do not resend a password
+      // merely because its HTTP status is otherwise considered transient.
+      try { parseApplePlist(response.body); return response; } catch { /* Non-plist transport response. */ }
+    }
     if (!transient) {
       return response;
     }
@@ -76,17 +82,21 @@ export async function authenticate(
   existingCookies?: Cookie[],
   deviceId: string = "",
   continuation?: AuthenticationContinuation,
+  previousAccount?: Account,
 ): Promise<Account> {
   deviceId = machineIdentity(deviceId).guid;
+  if (previousAccount && (previousAccount.email !== email || machineIdentity(previousAccount.deviceIdentifier).guid !== deviceId)) {
+    throw new AuthenticationError('Reauthentication account or device changed');
+  }
   if (continuation && (!code || continuation.email !== email || continuation.deviceId !== deviceId || continuation.expiresAt < Date.now())) {
     throw new AuthenticationError('Verification session expired or changed; start sign-in again');
   }
   let cookies: Cookie[] = [...(continuation?.cookies ?? existingCookies ?? [])];
-  let storeFront = continuation?.storeFront ?? '';
-  let pod = continuation?.pod;
+  let storeFront = continuation?.storeFront ?? previousAccount?.storeFront ?? previousAccount?.store ?? '';
+  let pod = continuation?.pod ?? previousAccount?.pod;
   let lastError: Error | null = null;
   const bag = continuation?.bag ?? await fetchBag(deviceId);
-  const authEndpoint = validateAuthURL(continuation?.endpoint ?? bag.authURL);
+  const authEndpoint = validateAuthURL(continuation?.endpoint ?? reauthenticationURL(previousAccount, bag.authURL));
   authEndpoint.searchParams.set('guid', deviceId);
   let requestHost = authEndpoint.hostname;
   let requestPath = authEndpoint.pathname + authEndpoint.search;
@@ -171,7 +181,12 @@ export async function authenticate(
         );
       }
 
-      const dict = parsePlist(response.body) as Record<string, any>;
+      let dict: Record<string, any>;
+      try {
+        dict = readPlistResponse(response, 'authentication', requestHost, requestPath);
+      } catch (error) {
+        throw new AuthenticationError((error as Error).message);
+      }
 
       // Check for 2FA requirement
       if (
@@ -191,36 +206,46 @@ export async function authenticate(
       const failureMessage =
         (dict.dialog as Record<string, any>)?.explanation ??
         dict.customerMessage;
+      if (dict.failureType) {
+        throw new AuthenticationError(failureMessage || 'Apple authentication was rejected');
+      }
 
-      const accountInfo = dict.accountInfo as Record<string, any>;
-      if (!accountInfo) {
+      const dsid = String(dict.dsPersonId ?? (previousAccount ? dict['download-queue-info']?.dsid : undefined) ?? '');
+      if (previousAccount && dsid && dsid !== previousAccount.directoryServicesIdentifier) {
+        throw new AuthenticationError('Reauthentication returned a different account');
+      }
+      const accountInfo = dict.accountInfo as Record<string, any> | undefined;
+      if (!accountInfo && !previousAccount) {
         throw new Error(
           failureMessage ?? i18n.t("errors.auth.missingAccountInfo"),
         );
       }
 
-      const address = accountInfo.address as Record<string, any>;
-      if (!address) {
+      const address = accountInfo?.address as Record<string, any> | undefined;
+      if (!address && !previousAccount) {
         throw new Error(failureMessage ?? i18n.t("errors.auth.missingAddress"));
       }
 
-      if (response.status !== 200 || !dict.passwordToken || !dict.dsPersonId || dict.failureType) {
+      if (response.status !== 200 || !dict.passwordToken || !dsid || dict.failureType) {
         throw new AuthenticationError(failureMessage ?? 'Apple authentication response has no valid session token');
       }
 
+      const successfulEndpoint = validateAuthURL('https://' + requestHost + requestPath);
+      successfulEndpoint.searchParams.delete('guid');
       const account: Account = {
         email,
         password,
-        appleId: (accountInfo.appleId as string) ?? "",
+        appleId: (accountInfo?.appleId as string) ?? previousAccount?.appleId ?? '',
         store: storeFront.split("-")[0],
         storeFront,
-        firstName: (address.firstName as string) ?? "",
-        lastName: (address.lastName as string) ?? "",
+        firstName: (address?.firstName as string) ?? previousAccount?.firstName ?? '',
+        lastName: (address?.lastName as string) ?? previousAccount?.lastName ?? '',
         passwordToken: (dict.passwordToken as string) ?? "",
-        directoryServicesIdentifier: String(dict.dsPersonId ?? ""),
+        directoryServicesIdentifier: dsid,
         cookies,
         deviceIdentifier: deviceId,
         pod,
+        authEndpoint: successfulEndpoint.href,
       };
 
       return account;
@@ -233,4 +258,19 @@ export async function authenticate(
   }
 
   throw lastError ?? new Error(i18n.t("errors.auth.unknownReason"));
+}
+
+function reauthenticationURL(account: Account | undefined, bagURL: string): string {
+  if (!account) return bagURL;
+  // Prefer Apple's last successful redirect, including its routing query.
+  if (account.authEndpoint) {
+    const saved = validateAuthURL(account.authEndpoint);
+    if (saved.hostname !== 'buy.itunes.apple.com') return saved.href;
+  }
+  // Existing accounts predate authEndpoint storage. Their pod was returned by
+  // successful authentication, so reuse that assignment instead of a default.
+  if (account.pod && /^\d{1,3}$/.test(account.pod)) {
+    return `https://p${account.pod}-buy.itunes.apple.com/WebObjects/MZFinance.woa/wa/authenticate`;
+  }
+  return bagURL;
 }

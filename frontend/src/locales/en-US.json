@@ -448,7 +448,8 @@
       "termsRequired": "You must accept the Terms & Conditions: {{url}}",
       "failed": "Purchase failed: {{failureType}}",
       "failedGeneral": "Failed to purchase app",
-      "unknownError": "An unknown error has occurred"
+      "unknownError": "An unknown error has occurred",
+      "reauthenticationFailed": "Reauthentication failed: {{reason}}. Reauthenticate in Account Details, then retry acquiring the license."
     },
     "auth": {
       "requiresVerification": "Authentication requires verification code. If no verification code was prompted, try logging in at https://account.apple.com to trigger the alert and fill the code in the 2FA Code field.",
